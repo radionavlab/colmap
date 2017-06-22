@@ -237,6 +237,7 @@ class Reconstruction {
   void ExportVRML(const std::string& images_path,
                   const std::string& points3D_path, const double image_scale,
                   const Eigen::Vector3d& image_rgb) const;
+  bool ExportOpenMVS(const std::string& path) const;
 
   // Extract colors for 3D points of given image. Colors will be extracted
   // only for 3D points which are completely black.

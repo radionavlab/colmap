@@ -29,6 +29,9 @@
 #include "util/bitmap.h"
 #include "util/misc.h"
 
+#define _USE_EIGEN
+#include "ext/OpenMVS/Interface.h"
+
 namespace colmap {
 
 Reconstruction::Reconstruction()
@@ -1359,6 +1362,85 @@ void Reconstruction::ExportVRML(const std::string& images_path,
   }
 
   points3D_file << " ] } } }\n";
+}
+
+bool Reconstruction::ExportOpenMVS(const std::string& path) const {
+  std::ofstream file(path, std::ios::trunc);
+  CHECK(file.is_open()) << path;
+
+  MVS::Interface scene;
+
+  std::unordered_map<camera_t, uint32_t> platforms;
+
+  for (const auto& camera : cameras_) {
+    if (camera.second.ModelId() == PinholeCameraModel::model_id) {
+      MVS::Interface::Platform platform;
+      MVS::Interface::Platform::Camera cam;
+
+      platforms.insert(std::make_pair(camera.second.CameraId(), scene.platforms.size()));
+
+      cam.width = camera.second.Width();
+      cam.height = camera.second.Height();
+      cam.K = camera.second.CalibrationMatrix();
+      cam.R = Eigen::Matrix3d::Identity();
+      cam.C = Eigen::Vector3d::Zero();
+      platform.cameras.push_back(cam);
+      scene.platforms.push_back(platform);
+    }
+  }
+
+  for (const auto image_id : reg_image_ids_) {
+    const class Image& image = Image(image_id);
+
+    MVS::Interface::Image img;
+    img.name = image.Name();
+    img.platformID = platforms.at(image.CameraId());
+    MVS::Interface::Platform& platform = scene.platforms[img.platformID];
+    img.cameraID = 0;
+    MVS::Interface::Platform::Pose pose;
+    img.poseID = platform.poses.size();
+    pose.R = image.RotationMatrix();
+    pose.C = image.ProjectionCenter();
+    platform.poses.push_back(pose);
+    scene.images.push_back(img);
+  }
+
+  for (const auto& point3D : points3D_) {
+    MVS::Interface::Vertex vert;
+    MVS::Interface::Vertex::ViewArr& views = vert.views;
+    for (const auto& track_el : point3D.second.Track().Elements()) {
+      const class Image& image = Image(track_el.image_id);
+
+      MVS::Interface::Vertex::View view;
+      view.imageID = image.ImageId();
+      view.confidence = 0;
+      views.push_back(view);
+    }
+
+    if (views.size() < 2) continue;
+
+    std::sort(
+      views.begin(), views.end(),
+      [] (const MVS::Interface::Vertex::View& view0,
+          const MVS::Interface::Vertex::View& view1)
+      {
+        return view0.imageID < view1.imageID;
+      }
+    );
+    Eigen::Vector3d xyz = point3D.second.XYZ();
+    vert.X = xyz.cast <float> ();
+    scene.vertices.push_back(vert);
+  }
+
+  if (!MVS::ARCHIVE::SerializeSave(scene, path))
+    return false;
+
+  std::cout
+    << "Scene saved to OpenMVS interface format:\n"
+    << "\t" << scene.images.size() << " images\n"
+    << "\t" << scene.vertices.size() << " points\n";
+
+  return true;
 }
 
 bool Reconstruction::ExtractColorsForImage(const image_t image_id,
