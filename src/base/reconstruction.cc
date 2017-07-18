@@ -1398,7 +1398,7 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
 
     MVS::Interface::Image img;
     img.name = image.Name();
-    img.platformID = platforms.at(image.CameraId());
+    img.platformID = platform_map.at(image.CameraId());
     MVS::Interface::Platform& platform = scene.platforms[img.platformID];
     img.cameraID = 0;
     MVS::Interface::Platform::Pose pose;
