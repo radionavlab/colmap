@@ -1370,15 +1370,16 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
 
   MVS::Interface scene;
 
-  std::unordered_map<camera_t, uint32_t> platforms;
+  std::unordered_map<camera_t, uint32_t> platform_map, view_map;
 
   for (const auto& camera : cameras_) {
     if (camera.second.ModelId() == PinholeCameraModel::model_id) {
+      if (platform_map.count(camera.second.CameraId()) == 0) {
+          platform_map.insert(std::make_pair(camera.second.CameraId(), scene.platforms.size()));
+      }
+
       MVS::Interface::Platform platform;
       MVS::Interface::Platform::Camera cam;
-
-      platforms.insert(std::make_pair(camera.second.CameraId(), scene.platforms.size()));
-
       cam.width = camera.second.Width();
       cam.height = camera.second.Height();
       cam.K = camera.second.CalibrationMatrix();
@@ -1389,7 +1390,10 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
     }
   }
 
+  scene.images.reserve(reg_image_ids_.size());
   for (const auto image_id : reg_image_ids_) {
+    view_map[image_id] = scene.images.size();
+
     const class Image& image = Image(image_id);
 
     MVS::Interface::Image img;
@@ -1405,19 +1409,22 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
     scene.images.push_back(img);
   }
 
+  scene.vertices.reserve(points3D_.size());
   for (const auto& point3D : points3D_) {
     MVS::Interface::Vertex vert;
     MVS::Interface::Vertex::ViewArr& views = vert.views;
     for (const auto& track_el : point3D.second.Track().Elements()) {
-      const class Image& image = Image(track_el.image_id);
-
-      MVS::Interface::Vertex::View view;
-      view.imageID = image.ImageId();
-      view.confidence = 0;
-      views.push_back(view);
+      const auto it(view_map.find(track_el.image_id));
+      if (it != view_map.end()) {
+          MVS::Interface::Vertex::View view;
+          view.imageID = it->second;
+          view.confidence = 0;
+          views.push_back(view);
     }
 
-    if (views.size() < 2) continue;
+    if (views.size() < 2) {
+      continue;
+    }
 
     std::sort(
       views.begin(), views.end(),
@@ -1432,8 +1439,9 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
     scene.vertices.push_back(vert);
   }
 
-  if (!MVS::ARCHIVE::SerializeSave(scene, path))
+  if (!MVS::ARCHIVE::SerializeSave(scene, path)) {
     return false;
+  }
 
   std::cout
     << "Scene saved to OpenMVS interface format:\n"
