@@ -1370,7 +1370,8 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
 
   MVS::Interface scene;
 
-  std::unordered_map<camera_t, uint32_t> platform_map, view_map;
+  std::unordered_map<camera_t, uint32_t> platform_map;
+  std::unordered_map<image_t, uint32_t> view_map;
 
   for (const auto& camera : cameras_) {
     if (camera.second.ModelId() == PinholeCameraModel::model_id) {
@@ -1380,8 +1381,8 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
 
       MVS::Interface::Platform platform;
       MVS::Interface::Platform::Camera cam;
-      cam.width = camera.second.Width();
-      cam.height = camera.second.Height();
+      cam.width = static_cast<uint32_t>(camera.second.Width());
+      cam.height = static_cast<uint32_t>(camera.second.Height());
       cam.K = camera.second.CalibrationMatrix();
       cam.R = Eigen::Matrix3d::Identity();
       cam.C = Eigen::Vector3d::Zero();
@@ -1392,7 +1393,7 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
 
   scene.images.reserve(reg_image_ids_.size());
   for (const auto image_id : reg_image_ids_) {
-    view_map[image_id] = scene.images.size();
+    view_map.insert(std::make_pair(image_id, scene.images.size()));
 
     const class Image& image = Image(image_id);
 
@@ -1402,7 +1403,7 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
     MVS::Interface::Platform& platform = scene.platforms[img.platformID];
     img.cameraID = 0;
     MVS::Interface::Platform::Pose pose;
-    img.poseID = platform.poses.size();
+    img.poseID = static_cast<uint32_t>(platform.poses.size());
     pose.R = image.RotationMatrix();
     pose.C = image.ProjectionCenter();
     platform.poses.push_back(pose);
@@ -1416,10 +1417,11 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
     for (const auto& track_el : point3D.second.Track().Elements()) {
       const auto it(view_map.find(track_el.image_id));
       if (it != view_map.end()) {
-          MVS::Interface::Vertex::View view;
-          view.imageID = it->second;
-          view.confidence = 0;
-          views.push_back(view);
+        MVS::Interface::Vertex::View view;
+        view.imageID = static_cast<uint32_t>(it->second);
+        view.confidence = 0;
+        views.push_back(view);
+      }
     }
 
     if (views.size() < 2) {
