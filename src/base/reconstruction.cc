@@ -858,7 +858,7 @@ void Reconstruction::WritePoints3D(const std::string& path) const {
   CHECK(file.is_open()) << path;
 
   file << "# 3D point list with one line of data per point:" << std::endl;
-  file << "#   POINT3D_ID, X, Y, Z, R, G, B, ERROR, "
+  file << "#   POINT3D_ID, X, Y, Z, R, G, B, ERROR, UNCERTAINTY, "
           "TRACK[] as (IMAGE_ID, POINT2D_IDX)"
        << std::endl;
   file << "# Number of points: " << points3D_.size()
@@ -873,6 +873,7 @@ void Reconstruction::WritePoints3D(const std::string& path) const {
     file << static_cast<int>(point3D.second.Color(1)) << " ";
     file << static_cast<int>(point3D.second.Color(2)) << " ";
     file << point3D.second.Error() << " ";
+    file << point3D.second.Uncertainty() << " ";
 
     std::ostringstream line;
 
