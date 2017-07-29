@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
   options.AddRequiredOption("input_path", &input_path);
   options.AddRequiredOption("output_path", &output_path);
   options.AddRequiredOption("output_type", &output_type,
-                            "{'BIN', 'TXT', 'NVM', 'Bundler', 'VRML', 'PLY'}");
+                            "{'BIN', 'TXT', 'NVM', 'Bundler', 'VRML', 'PLY', 'OpenMVS'}");
   options.Parse(argc, argv);
 
   Reconstruction reconstruction;
@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
     reconstruction.ExportVRML(base_path + ".images.wrl",
                               base_path + ".points3D.wrl", 1,
                               Eigen::Vector3d(1, 0, 0));
+  } else if (output_type == "openmvs") {
+    reconstruction.ExportOpenMVS(output_path);
   } else {
     std::cerr << "ERROR: Invalid `output_type`" << std::endl;
     return EXIT_FAILURE;

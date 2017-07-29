@@ -36,6 +36,7 @@ set(COLMAP_LIBRARIES
     flann
     graclus
     lsd
+    open_mvs
     pba
     poisson_recon
     sqlite3
@@ -115,6 +116,7 @@ ADD_SOURCE_DIR(exe EXE_SRC *.h *.cc)
 ADD_SOURCE_DIR(ext/FLANN EXT_FLANN_SRC *.h *.cpp *.hpp *.cu)
 ADD_SOURCE_DIR(ext/Graclus EXT_GRACLUS_SRC *.h *.c)
 ADD_SOURCE_DIR(ext/LSD EXT_LSD_SRC *.h *.c)
+ADD_SOURCE_DIR(ext/OpenMVS EXT_OPENMVS_SRC *.h)
 ADD_SOURCE_DIR(ext/PBA EXT_PBA_SRC *.h *.cpp *.cu)
 ADD_SOURCE_DIR(ext/SiftGPU EXT_SIFTGPU_SRC *.h *.cpp *.cu)
 ADD_SOURCE_DIR(ext/SQLite EXT_SQLITE_SRC *.h *.c)
@@ -139,6 +141,7 @@ add_library(
     ${EXT_FLANN_SRC}
     ${EXT_GRACLUS_SRC}
     ${EXT_LSD_SRC}
+    ${EXT_OPENMVS_SRC}
     ${EXT_PBA_SRC}
     ${EXT_SIFTGPU_SRC}
     ${EXT_SQLITE_SRC}
