@@ -290,11 +290,10 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   CHECK(covariance.Compute(covariance_blocks, problem_.get()));
 
   for (const auto& id : reconstruction->Point3DIds()) {
-    Point3D point3d = reconstruction->Point3D(id);
-    double covariance_block[3 * 3];
-    covariance.GetCovarianceBlock(point3d.XYZ().data(), point3d.XYZ().data(), covariance_block);
-    Eigen::Matrix3d cov_matrix(covariance_block);
-    point3d.SetUncertainty(cov_matrix.eigenvalues().real().maxCoeff());
+    Point3D& point3d = reconstruction->Point3D(id);
+    Eigen::Matrix3d cov;
+    covariance.GetCovarianceBlock(point3d.XYZ().data(), point3d.XYZ().data(), cov.data());
+    point3d.SetUncertainty(cov.diagonal().maxCoeff());
   }
 
   if (solver_options.minimizer_progress_to_stdout) {
