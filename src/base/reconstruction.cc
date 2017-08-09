@@ -1289,7 +1289,14 @@ bool Reconstruction::ExportOpenMVS(const std::string& path) const {
   for (const auto& camera : cameras_) {
     if (camera.second.ModelId() == PinholeCameraModel::model_id) {
       if (platform_map.count(camera.second.CameraId()) == 0) {
-          platform_map.insert(std::make_pair(camera.second.CameraId(), scene.platforms.size()));
+        platform_map.insert(std::make_pair(camera.second.CameraId(), scene.platforms.size()));
+      }
+
+      if (platform_map.empty()) {
+        std::cout << "WARNING: OpenMVS only supports PINHOLE model cameras. "
+                  << "You should run the image_undistorter tool first."
+                  << std::endl;
+        return false;
       }
 
       MVS::Interface::Platform platform;
