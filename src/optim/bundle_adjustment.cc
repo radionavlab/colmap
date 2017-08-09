@@ -283,18 +283,39 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   ceres::Covariance covariance(options);
 
   std::vector<std::pair<const double *, const double *>> covariance_blocks;
-  for (const auto& point3d : reconstruction->Points3D()) {
-    covariance_blocks.push_back(std::make_pair(point3d.second.XYZ().data(), point3d.second.XYZ().data()));
+  for (const auto point3D_id : config_.VariablePoints()) {
+    Point3D& point3D = reconstruction->Point3D(point3D_id);
+    const double* data = point3D.XYZ().data();
+    covariance_blocks.push_back(std::make_pair(data, data));
   }
+
+  /*
+  for (const auto point3D_id : config_.ConstantPoints()) {
+    Point3D& point3D = reconstruction->Point3D(point3D_id);
+    const double* data = point3D.XYZ().data();
+    covariance_blocks.push_back(std::make_pair(data, data));
+  }
+  */
 
   CHECK(covariance.Compute(covariance_blocks, problem_.get()));
 
-  for (const auto& id : reconstruction->Point3DIds()) {
-    Point3D& point3d = reconstruction->Point3D(id);
+  for (const auto point3D_id : config_.VariablePoints()) {
+    Point3D& point3D = reconstruction->Point3D(point3D_id);
+    const double* data = point3D.XYZ().data();
     Eigen::Matrix3d cov;
-    covariance.GetCovarianceBlock(point3d.XYZ().data(), point3d.XYZ().data(), cov.data());
-    point3d.SetUncertainty(cov.diagonal().maxCoeff());
+    covariance.GetCovarianceBlock(data, data, cov.data());
+    point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
   }
+
+  /*
+  for (const auto point3D_id : config_.ConstantPoints()) {
+    Point3D& point3D = reconstruction->Point3D(point3D_id);
+    const double* data = point3D.XYZ().data();
+    Eigen::Matrix3d cov;
+    covariance.GetCovarianceBlock(data, data, cov.data());
+    point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
+  }
+  */
 
   if (solver_options.minimizer_progress_to_stdout) {
     std::cout << std::endl;
