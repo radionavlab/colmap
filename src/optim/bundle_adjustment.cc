@@ -279,23 +279,24 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
 
   // Compute diagonal of covariance matrix. To do this, we must compute the
   // covariance
-  ceres::Covariance::Options options;
-  ceres::Covariance covariance(options);
+  ceres::Covariance::Options covariance_options;
+  covariance_options.num_threads = solver_options.num_threads;
+  covariance_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
+  ceres::Covariance covariance(covariance_options);
 
-  std::vector<std::pair<const double *, const double *>> covariance_blocks;
+  std::vector< std::pair<const double *, const double *> > covariance_blocks;
   for (const auto point3D_id : config_.VariablePoints()) {
     Point3D& point3D = reconstruction->Point3D(point3D_id);
     const double* data = point3D.XYZ().data();
     covariance_blocks.push_back(std::make_pair(data, data));
   }
 
-  /*
+
   for (const auto point3D_id : config_.ConstantPoints()) {
     Point3D& point3D = reconstruction->Point3D(point3D_id);
     const double* data = point3D.XYZ().data();
     covariance_blocks.push_back(std::make_pair(data, data));
   }
-  */
 
   CHECK(covariance.Compute(covariance_blocks, problem_.get()));
 
@@ -307,7 +308,6 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
   }
 
-  /*
   for (const auto point3D_id : config_.ConstantPoints()) {
     Point3D& point3D = reconstruction->Point3D(point3D_id);
     const double* data = point3D.XYZ().data();
@@ -315,7 +315,6 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     covariance.GetCovarianceBlock(data, data, cov.data());
     point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
   }
-  */
 
   if (solver_options.minimizer_progress_to_stdout) {
     std::cout << std::endl;
