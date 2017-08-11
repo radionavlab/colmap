@@ -281,34 +281,21 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   // covariance
   ceres::Covariance::Options covariance_options;
   covariance_options.num_threads = solver_options.num_threads;
-  covariance_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
   ceres::Covariance covariance(covariance_options);
 
+  std::vector<point3D_t> problem_points3D_ids;
   std::vector< std::pair<const double *, const double *> > covariance_blocks;
-  for (const auto point3D_id : config_.VariablePoints()) {
-    Point3D& point3D = reconstruction->Point3D(point3D_id);
-    const double* data = point3D.XYZ().data();
-    covariance_blocks.push_back(std::make_pair(data, data));
-  }
-
-
-  for (const auto point3D_id : config_.ConstantPoints()) {
-    Point3D& point3D = reconstruction->Point3D(point3D_id);
-    const double* data = point3D.XYZ().data();
-    covariance_blocks.push_back(std::make_pair(data, data));
+  for (const auto& point3D : reconstruction->Points3D()) {
+    const double * data = point3D.second.XYZ().data();
+    if (problem_->HasParameterBlock(data)) {
+      problem_points3D_ids.push_back(point3D.first);
+      covariance_blocks.emplace_back(data, data);
+    }
   }
 
   CHECK(covariance.Compute(covariance_blocks, problem_.get()));
 
-  for (const auto point3D_id : config_.VariablePoints()) {
-    Point3D& point3D = reconstruction->Point3D(point3D_id);
-    const double* data = point3D.XYZ().data();
-    Eigen::Matrix3d cov;
-    covariance.GetCovarianceBlock(data, data, cov.data());
-    point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
-  }
-
-  for (const auto point3D_id : config_.ConstantPoints()) {
+  for (const auto point3D_id : problem_points3D_ids) {
     Point3D& point3D = reconstruction->Point3D(point3D_id);
     const double* data = point3D.XYZ().data();
     Eigen::Matrix3d cov;
