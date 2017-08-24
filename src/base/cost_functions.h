@@ -24,6 +24,74 @@
 
 namespace colmap {
 
+// Cost function to estimate camera pose given a measurement of its pose
+class CameraPoseCostFunction {
+ public:
+  CameraPoseCostFunction(const Eigen::Vector4d& qvec,
+                         const Eigen::Vector3d& tvec)
+      : qx_(qvec(0)),
+        qy_(qvec(1)),
+        qz_(qvec(2)),
+        qw_(qvec(3)),
+        tx_(tvec(0)),
+        ty_(tvec(1)),
+        tz_(tvec(2)) {}
+
+  static ceres::CostFunction* Create(const Eigen::Vector4d& qvec,
+                                     const Eigen::Vector3d& tvec) {
+    return (new ceres::AutoDiffCostFunction<
+            CameraPoseCostFunction, 6, 4, 3>(
+        new CameraPoseCostFunction(qvec, tvec)));
+  }
+
+  template <typename T>
+  bool operator()(const T* const qvec, const T* const tvec, T* residuals) const {
+    const T qvec_meas[4] = {T(qx_), T(qy_), T(qz_), T(qw_)};
+    const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
+
+    // Convert camera to inertial frame
+    T tvec_local[3];
+    ceres::QuaternionRotatePoint(qvec, tvec, tvec_local);
+
+    // Convert camera measurement to inertial frame
+    T tvec_meas_local[3];
+    ceres::QuaternionRotatePoint(qvec_meas, tvec_meas, tvec_meas_local);
+
+    // Conjugate measurement quaternion to calculate error
+    const T qvec_meas_conj[4] = {qvec_meas[0], qvec_meas[1], qvec_meas[2], -qvec_meas[3]};
+
+    // Calculate quaternion error
+    T dq[4];
+    ceres::QuaternionProduct(qvec, qvec_meas_conj, dq);
+
+    // Normalize quaternion error
+    const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
+    dq[0] /= norm;
+    dq[1] /= norm;
+    dq[2] /= norm;
+    dq[3] /= norm;
+
+    // Convert quaternion error to axis-angle representation
+    ceres::QuaternionToAngleAxis(dq, residuals);
+
+    // Calculate translate residuals
+    residuals[3] = tvec_local[0] - tvec_meas_local[0];
+    residuals[4] = tvec_local[1] - tvec_meas_local[1];
+    residuals[5] = tvec_local[2] - tvec_meas_local[2];
+
+    return true;
+  }
+
+ private:
+  const double qx_;
+  const double qy_;
+  const double qz_;
+  const double qw_;
+  const double tx_;
+  const double ty_;
+  const double tz_;
+};
+
 // Standard bundle adjustment cost function for variable
 // camera pose and calibration and point parameters.
 template <typename CameraModel>
