@@ -357,6 +357,13 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   // Collect cameras for final parameterization.
   CHECK(image.HasCamera());
 
+  if (image.HasTvecPrior() && image.HasQvecPrior()) {
+    // config_.SetConstantPose(image_id);
+    problem_->AddResidualBlock(
+        CameraPoseCostFunction::Create(image.QvecPrior(), image.TvecPrior()),
+        NULL, qvec_data, tvec_data);
+  }
+
   const bool constant_pose = config_.HasConstantPose(image_id);
 
   // Add residuals to bundle adjustment problem.

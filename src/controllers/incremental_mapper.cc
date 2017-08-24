@@ -173,6 +173,61 @@ size_t CompleteAndMergeTracks(
   return num_completed_observations + num_merged_observations;
 }
 
+std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
+    const std::string& path) {
+  std::ifstream file(path);
+  CHECK(file.is_open()) << path;
+
+  std::string line;
+  std::string item;
+
+  std::unordered_map<std::string, Eigen::Matrix3x2d> image_poses;
+
+  while (std::getline(file, line)) {
+    StringTrim(&line);
+
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+
+    std::stringstream line_stream(line);
+
+    // Image name
+    std::getline(line_stream, item, ' ');
+    const std::string image_name = boost::lexical_cast<std::string>(item);
+
+    Eigen::Matrix3x2d pose;
+
+    // Rx
+    std::getline(line_stream, item, ' ');
+    pose(0, 0) = boost::lexical_cast<double>(item);
+
+    // Ry
+    std::getline(line_stream, item, ' ');
+    pose(1, 0) = boost::lexical_cast<double>(item);
+
+    // Rz
+    std::getline(line_stream, item, ' ');
+    pose(2, 0) = boost::lexical_cast<double>(item);
+
+    // Tx
+    std::getline(line_stream, item, ' ');
+    pose(0, 1) = boost::lexical_cast<double>(item);
+
+    // Ty
+    std::getline(line_stream, item, ' ');
+    pose(1, 1) = boost::lexical_cast<double>(item);
+
+    // Tz
+    std::getline(line_stream, item, ' ');
+    pose(2, 1) = boost::lexical_cast<double>(item);
+
+    image_poses.emplace(image_name, pose);
+  }
+
+  return image_poses;
+}
+
 IncrementalMapper::Options IncrementalMapperController::Options::Mapper()
     const {
   IncrementalMapper::Options options = mapper;
@@ -288,6 +343,20 @@ IncrementalMapperController::IncrementalMapperController(
 void IncrementalMapperController::Run() {
   if (!LoadDatabase()) {
     return;
+  }
+
+  if (!options_->image_poses.empty()) {
+    for (auto& image : database_cache_.Images()) {
+      auto it = options_->image_poses.find(image.second.Name());
+      if (it != options_->image_poses.end()) {
+        const double angle = it->second.col(0).norm();
+        const Eigen::Vector3d axis = it->second.col(0) / angle;
+        Eigen::AngleAxisd aa(angle, axis);
+        Eigen::Quaterniond q(aa);
+        image.second.SetQvecPrior(Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()));
+        image.second.SetTvecPrior(it->second.col(1));
+      }
+    }
   }
 
   IncrementalMapper::Options init_mapper_options = options_->Mapper();

@@ -112,6 +112,9 @@ class IncrementalMapperController : public Thread {
     // be reconstructed by default.
     std::set<std::string> image_names;
 
+    // External pose measurements for each image
+    std::unordered_map<std::string, Eigen::Matrix3x2d> image_poses;
+
     IncrementalMapper::Options Mapper() const;
     IncrementalTriangulator::Options Triangulation() const;
     BundleAdjuster::Options LocalBundleAdjustment() const;
@@ -166,6 +169,10 @@ size_t FilterImages(const IncrementalMapperController::Options& options,
 size_t CompleteAndMergeTracks(
     const IncrementalMapperController::Options& options,
     IncrementalMapper* mapper);
+
+// Read in image pose measurements from file
+std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
+    const std::string& path);
 
 }  // namespace colmap
 
