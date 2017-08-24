@@ -52,7 +52,9 @@ class DatabaseCache {
 
   // Get all objects.
   inline const EIGEN_STL_UMAP(camera_t, class Camera) & Cameras() const;
+  inline EIGEN_STL_UMAP(camera_t, class Camera) & Cameras();
   inline const EIGEN_STL_UMAP(image_t, class Image) & Images() const;
+  inline EIGEN_STL_UMAP(image_t, class Image) & Images();
 
   // Check whether specific object exists.
   inline bool ExistsCamera(const camera_t camera_id) const;
@@ -111,7 +113,15 @@ const EIGEN_STL_UMAP(camera_t, class Camera) & DatabaseCache::Cameras() const {
   return cameras_;
 }
 
+EIGEN_STL_UMAP(camera_t, class Camera) & DatabaseCache::Cameras() {
+  return cameras_;
+}
+
 const EIGEN_STL_UMAP(image_t, class Image) & DatabaseCache::Images() const {
+  return images_;
+}
+
+EIGEN_STL_UMAP(image_t, class Image) & DatabaseCache::Images() {
   return images_;
 }
 
