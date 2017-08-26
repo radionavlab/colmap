@@ -46,7 +46,7 @@ class CameraPoseCostFunction {
 
   template <typename T>
   bool operator()(const T* const qvec, const T* const tvec, T* residuals) const {
-    const T qvec_meas[4] = {T(qx_), T(qy_), T(qz_), T(qw_)};
+    const T qvec_meas[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
     const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
 
     // Convert camera to inertial frame
@@ -169,7 +169,7 @@ class BundleAdjustmentConstantPoseCostFunction {
   template <typename T>
   bool operator()(const T* const point3D, const T* const camera_params,
                   T* residuals) const {
-    const T qvec[4] = {T(qx_), T(qy_), T(qz_), T(qw_)};
+    const T qvec[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
 
     // Rotate and translate.
     T point3D_local[3];

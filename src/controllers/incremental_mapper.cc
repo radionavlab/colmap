@@ -345,20 +345,6 @@ void IncrementalMapperController::Run() {
     return;
   }
 
-  if (!options_->image_poses.empty()) {
-    for (auto& image : database_cache_.Images()) {
-      auto it = options_->image_poses.find(image.second.Name());
-      if (it != options_->image_poses.end()) {
-        const double angle = it->second.col(0).norm();
-        const Eigen::Vector3d axis = it->second.col(0) / angle;
-        Eigen::AngleAxisd aa(angle, axis);
-        Eigen::Quaterniond q(aa);
-        image.second.SetQvecPrior(Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()));
-        image.second.SetTvecPrior(it->second.col(1));
-      }
-    }
-  }
-
   IncrementalMapper::Options init_mapper_options = options_->Mapper();
   Reconstruct(init_mapper_options);
 
@@ -444,6 +430,25 @@ void IncrementalMapperController::Reconstruct(
         reconstruction_manager_->Get(reconstruction_idx);
 
     mapper.BeginReconstruction(&reconstruction);
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Read image pose measurements
+    ////////////////////////////////////////////////////////////////////////////
+
+    if (!options_->image_poses.empty()) {
+      for (const auto& image : reconstruction.Images()) {
+        auto it = options_->image_poses.find(image.second.Name());
+        if (it != options_->image_poses.end()) {
+          class Image& reimage = reconstruction.Image(image.first);
+          const double angle = it->second.col(0).norm();
+          const Eigen::Vector3d axis = it->second.col(0) / angle;
+          Eigen::AngleAxisd aa(angle, axis);
+          Eigen::Quaterniond q(aa);
+          reimage.SetQvecPrior(Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()));
+          reimage.SetTvecPrior(it->second.col(1));
+        }
+      }
+    }
 
     ////////////////////////////////////////////////////////////////////////////
     // Register initial pair
