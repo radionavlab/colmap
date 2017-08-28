@@ -298,9 +298,7 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   for (const auto point3D_id : problem_points3D_ids) {
     Point3D& point3D = reconstruction->Point3D(point3D_id);
     const double* data = point3D.XYZ().data();
-    Eigen::Matrix3d cov;
-    covariance.GetCovarianceBlock(data, data, cov.data());
-    point3D.SetUncertainty(cov.eigenvalues().real().maxCoeff());
+    covariance.GetCovarianceBlock(data, data, point3D.Covariance().data());
   }
 
   if (solver_options.minimizer_progress_to_stdout) {

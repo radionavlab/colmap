@@ -56,8 +56,9 @@ class Point3D {
   inline bool HasError() const;
   inline void SetError(const double error);
 
-  inline double Uncertainty() const;
-  inline void SetUncertainty(const double uncertainty);
+  inline const Eigen::Matrix3d& Covariance() const;
+  inline Eigen::Matrix3d& Covariance();
+  inline void SetCovariance(const Eigen::Matrix3d& covariance);
 
   inline const class Track& Track() const;
   inline class Track& Track();
@@ -73,8 +74,8 @@ class Point3D {
   // The mean reprojection error in pixels.
   double error_;
 
-  // The uncertainty of this point as represented by the covariance from the bundle adjustment
-  double uncertainty_;
+  // Covariance matrix of this point's position
+  Eigen::Matrix3d covariance_;
 
   // The track of the point as a list of image observations.
   class Track track_;
@@ -116,9 +117,13 @@ bool Point3D::HasError() const { return error_ != -1.0; }
 
 void Point3D::SetError(const double error) { error_ = error; }
 
-double Point3D::Uncertainty() const { return uncertainty_; }
+const Eigen::Matrix3d& Point3D::Covariance() const { return covariance_; }
 
-void Point3D::SetUncertainty(const double uncertainty) { uncertainty_ = uncertainty; }
+Eigen::Matrix3d& Point3D::Covariance() { return covariance_; }
+
+void Point3D::SetCovariance(const Eigen::Matrix3d& covariance) {
+  covariance_ = covariance;
+}
 
 const class Track& Point3D::Track() const { return track_; }
 

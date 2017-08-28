@@ -1809,9 +1809,11 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
     std::getline(line_stream, item, ' ');
     point3D.SetError(boost::lexical_cast<double>(item));
 
-    // Uncertainty
-    std::getline(line_stream, item, ' ');
-    point3D.SetUncertainty(boost::lexical_cast<double>(item));
+    // Covariance
+    for (size_t j = 0; j < point3D.Covariance().size(); ++j) {
+      std::getline(line_stream, item, ' ');
+      point3D.Covariance()(j) = boost::lexical_cast<double>(item);
+    }
 
     // TRACK
     while (!line_stream.eof()) {
@@ -1931,7 +1933,10 @@ void Reconstruction::ReadPoints3DBinary(const std::string& path) {
     point3D.Color(1) = ReadBinaryLittleEndian<uint8_t>(&file);
     point3D.Color(2) = ReadBinaryLittleEndian<uint8_t>(&file);
     point3D.SetError(ReadBinaryLittleEndian<double>(&file));
-    point3D.SetUncertainty(ReadBinaryLittleEndian<double>(&file));
+
+    for (size_t j = 0; j < point3D.Covariance().size(); ++j) {
+      point3D.Covariance()(j) = ReadBinaryLittleEndian<double>(&file);
+    }
 
     const size_t track_length = ReadBinaryLittleEndian<uint64_t>(&file);
     for (size_t j = 0; j < track_length; ++j) {
@@ -2052,7 +2057,10 @@ void Reconstruction::WritePoints3DText(const std::string& path) const {
     file << static_cast<int>(point3D.second.Color(1)) << " ";
     file << static_cast<int>(point3D.second.Color(2)) << " ";
     file << point3D.second.Error() << " ";
-    file << point3D.second.Uncertainty() << " ";
+
+    for (size_t j = 0; j < point3D.second.Covariance().size(); ++j) {
+      file << point3D.second.Covariance()(j) << " ";
+    }
 
     std::ostringstream line;
 
@@ -2138,7 +2146,10 @@ void Reconstruction::WritePoints3DBinary(const std::string& path) const {
     WriteBinaryLittleEndian<uint8_t>(&file, point3D.second.Color(1));
     WriteBinaryLittleEndian<uint8_t>(&file, point3D.second.Color(2));
     WriteBinaryLittleEndian<double>(&file, point3D.second.Error());
-    WriteBinaryLittleEndian<double>(&file, point3D.second.Uncertainty());
+
+    for (size_t j = 0; j < point3D.second.Covariance().size(); ++j) {
+      WriteBinaryLittleEndian<double>(&file, point3D.second.Covariance()(j));
+    }
 
     WriteBinaryLittleEndian<uint64_t>(&file, point3D.second.Track().Length());
     for (const auto& track_el : point3D.second.Track().Elements()) {
