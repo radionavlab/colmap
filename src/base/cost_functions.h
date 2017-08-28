@@ -45,7 +45,8 @@ class CameraPoseCostFunction {
   }
 
   template <typename T>
-  bool operator()(const T* const qvec, const T* const tvec, T* residuals) const {
+  bool operator()(const T* const qvec, const T* const tvec, 
+                  T* residuals) const {
     const T qvec_meas[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
     const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
 
@@ -58,7 +59,10 @@ class CameraPoseCostFunction {
     ceres::QuaternionRotatePoint(qvec_meas, tvec_meas, tvec_meas_local);
 
     // Conjugate measurement quaternion to calculate error
-    const T qvec_meas_conj[4] = {qvec_meas[0], qvec_meas[1], qvec_meas[2], -qvec_meas[3]};
+    const T qvec_meas_conj[4] = {-qvec_meas[0], 
+                                  qvec_meas[1], 
+                                  qvec_meas[2], 
+                                  qvec_meas[3]};
 
     // Calculate quaternion error
     T dq[4];
