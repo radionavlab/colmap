@@ -2042,7 +2042,7 @@ void Reconstruction::WritePoints3DText(const std::string& path) const {
   CHECK(file.is_open()) << path;
 
   file << "# 3D point list with one line of data per point:" << std::endl;
-  file << "#   POINT3D_ID, X, Y, Z, R, G, B, ERROR, UNCERTAINTY, "
+  file << "#   POINT3D_ID, X, Y, Z, R, G, B, ERROR, COVARIANCE[9], "
           "TRACK[] as (IMAGE_ID, POINT2D_IDX)"
        << std::endl;
   file << "# Number of points: " << points3D_.size()
