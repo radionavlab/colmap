@@ -277,18 +277,18 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
 
   ceres::Solve(solver_options, problem_.get(), &summary_);
 
-  // Compute diagonal of covariance matrix. To do this, we must compute the
-  // covariance
+  // Compute covariance matrix of each 3D point
   ceres::Covariance::Options covariance_options;
   covariance_options.num_threads = solver_options.num_threads;
   ceres::Covariance covariance(covariance_options);
 
-  std::vector<point3D_t> problem_points3D_ids;
+  std::set<point3D_t> problem_points3D_ids;
   std::vector< std::pair<const double *, const double *> > covariance_blocks;
   for (const auto& point3D : reconstruction->Points3D()) {
     const double * data = point3D.second.XYZ().data();
-    if (problem_->HasParameterBlock(data)) {
-      problem_points3D_ids.push_back(point3D.first);
+    if (problem_->HasParameterBlock(data) && 
+        !problem_points3D_ids.count(point3D.first)) {
+      problem_points3D_ids.insert(point3D.first);
       covariance_blocks.emplace_back(data, data);
     }
   }
