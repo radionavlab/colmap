@@ -29,10 +29,10 @@ class CameraPoseCostFunction {
  public:
   CameraPoseCostFunction(const Eigen::Vector4d& qvec,
                          const Eigen::Vector3d& tvec)
-      : qx_(qvec(0)),
-        qy_(qvec(1)),
-        qz_(qvec(2)),
-        qw_(qvec(3)),
+      : qw_(qvec(0)),
+        qx_(qvec(1)),
+        qy_(qvec(2)),
+        qz_(qvec(3)),
         tx_(tvec(0)),
         ty_(tvec(1)),
         tz_(tvec(2)) {}
@@ -87,10 +87,10 @@ class CameraPoseCostFunction {
   }
 
  private:
+  const double qw_;
   const double qx_;
   const double qy_;
   const double qz_;
-  const double qw_;
   const double tx_;
   const double ty_;
   const double tz_;
@@ -151,10 +151,10 @@ class BundleAdjustmentConstantPoseCostFunction {
   BundleAdjustmentConstantPoseCostFunction(const Eigen::Vector4d& qvec,
                                            const Eigen::Vector3d& tvec,
                                            const Eigen::Vector2d& point2D)
-      : qx_(qvec(0)),
-        qy_(qvec(1)),
-        qz_(qvec(2)),
-        qw_(qvec(3)),
+      : qw_(qvec(0)),
+        qx_(qvec(1)),
+        qy_(qvec(2)),
+        qz_(qvec(3)),
         tx_(tvec(0)),
         ty_(tvec(1)),
         tz_(tvec(2)),
@@ -199,10 +199,10 @@ class BundleAdjustmentConstantPoseCostFunction {
   }
 
  private:
+  double qw_;
   double qx_;
   double qy_;
   double qz_;
-  double qw_;
   double tx_;
   double ty_;
   double tz_;
