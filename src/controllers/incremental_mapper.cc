@@ -32,8 +32,11 @@ size_t TriangulateImage(const IncrementalMapperController::Options& options,
 }
 
 void AdjustGlobalBundle(const IncrementalMapperController::Options& options,
-                        IncrementalMapper* mapper) {
+                        IncrementalMapper* mapper,
+                        const bool final_iteration = false) {
   BundleAdjuster::Options custom_options = options.GlobalBundleAdjustment();
+
+  custom_options.compute_covariance = final_iteration;
 
   const size_t num_reg_images = mapper->GetReconstruction().NumRegImages();
 
@@ -90,7 +93,8 @@ void IterativeLocalRefinement(
 
 void IterativeGlobalRefinement(
     const IncrementalMapperController::Options& options,
-    IncrementalMapper* mapper) {
+    IncrementalMapper* mapper,
+    const bool final_iteration = false) {
   PrintHeading1("Retriangulation");
   CompleteAndMergeTracks(options, mapper);
   std::cout << "  => Retriangulated observations: "
@@ -100,7 +104,7 @@ void IterativeGlobalRefinement(
     const size_t num_observations =
         mapper->GetReconstruction().ComputeNumObservations();
     size_t num_changed_observations = 0;
-    AdjustGlobalBundle(options, mapper);
+    AdjustGlobalBundle(options, mapper, final_iteration);
     num_changed_observations += CompleteAndMergeTracks(options, mapper);
     num_changed_observations += FilterPoints(options, mapper);
     const double changed =
@@ -621,7 +625,7 @@ void IncrementalMapperController::Reconstruct(
       if (!reg_next_success && prev_reg_next_success) {
         reg_next_success = true;
         prev_reg_next_success = false;
-        IterativeGlobalRefinement(*options_, &mapper);
+        IterativeGlobalRefinement(*options_, &mapper, true);
       } else {
         prev_reg_next_success = reg_next_success;
       }
@@ -637,7 +641,7 @@ void IncrementalMapperController::Reconstruct(
     if (reconstruction.NumRegImages() >= 2 &&
         reconstruction.NumRegImages() != ba_prev_num_reg_images &&
         reconstruction.NumPoints3D() != ba_prev_num_points) {
-      IterativeGlobalRefinement(*options_, &mapper);
+      IterativeGlobalRefinement(*options_, &mapper, true);
     }
 
     // If the total number of images is small then do not enforce the minimum

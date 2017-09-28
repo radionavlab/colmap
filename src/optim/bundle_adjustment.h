@@ -122,6 +122,9 @@ class BundleAdjuster {
     // Whether to print a final summary.
     bool print_summary = true;
 
+    // Whether to compute covariance of 3D points
+    bool compute_covariance = false;
+
     // Ceres-Solver options.
     ceres::Solver::Options solver_options;
 
