@@ -216,6 +216,64 @@ BOOST_AUTO_TEST_CASE(TestThreadRestart) {
   }
 }
 
+BOOST_AUTO_TEST_CASE(TestThreadValidSetup) {
+  class TestThread : public Thread {
+    void Run() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      SignalValidSetup();
+    }
+  };
+
+  TestThread thread;
+  BOOST_CHECK(!thread.IsStarted());
+  BOOST_CHECK(!thread.IsStopped());
+  BOOST_CHECK(!thread.IsPaused());
+  BOOST_CHECK(!thread.IsRunning());
+  BOOST_CHECK(!thread.IsFinished());
+
+  thread.Start();
+
+  BOOST_CHECK(thread.CheckValidSetup());
+  BOOST_CHECK(thread.CheckValidSetup());
+
+  thread.Wait();
+  BOOST_CHECK(thread.IsStarted());
+  BOOST_CHECK(!thread.IsStopped());
+  BOOST_CHECK(!thread.IsPaused());
+  BOOST_CHECK(!thread.IsRunning());
+  BOOST_CHECK(thread.IsFinished());
+  BOOST_CHECK(thread.CheckValidSetup());
+}
+
+BOOST_AUTO_TEST_CASE(TestThreadInvalidSetup) {
+  class TestThread : public Thread {
+    void Run() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      SignalInvalidSetup();
+    }
+  };
+
+  TestThread thread;
+  BOOST_CHECK(!thread.IsStarted());
+  BOOST_CHECK(!thread.IsStopped());
+  BOOST_CHECK(!thread.IsPaused());
+  BOOST_CHECK(!thread.IsRunning());
+  BOOST_CHECK(!thread.IsFinished());
+
+  thread.Start();
+
+  BOOST_CHECK(!thread.CheckValidSetup());
+  BOOST_CHECK(!thread.CheckValidSetup());
+
+  thread.Wait();
+  BOOST_CHECK(thread.IsStarted());
+  BOOST_CHECK(!thread.IsStopped());
+  BOOST_CHECK(!thread.IsPaused());
+  BOOST_CHECK(!thread.IsRunning());
+  BOOST_CHECK(thread.IsFinished());
+  BOOST_CHECK(!thread.CheckValidSetup());
+}
+
 BOOST_AUTO_TEST_CASE(TestCallback) {
   class TestThread : public Thread {
    public:
@@ -479,6 +537,71 @@ BOOST_AUTO_TEST_CASE(TestThreadPoolWait) {
   for (const auto result : results) {
     BOOST_CHECK_EQUAL(result, 1);
   }
+}
+
+BOOST_AUTO_TEST_CASE(TestThreadPoolWaitWithPause) {
+  std::vector<uint8_t> results(4, 0);
+  std::function<void(int)> Func = [&results](const int num) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    results[num] = 1;
+  };
+
+  ThreadPool pool(4);
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    pool.AddTask(Func, i);
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  pool.Wait();
+
+  for (const auto result : results) {
+    BOOST_CHECK_EQUAL(result, 1);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(TestThreadPoolWaitWithoutPause) {
+  std::vector<uint8_t> results(4, 0);
+  std::function<void(int)> Func = [&results](const int num) {
+    results[num] = 1;
+  };
+
+  ThreadPool pool(4);
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    pool.AddTask(Func, i);
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  pool.Wait();
+
+  for (const auto result : results) {
+    BOOST_CHECK_EQUAL(result, 1);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(TestThreadPoolWaitEverytime) {
+  std::vector<uint8_t> results(4, 0);
+  std::function<void(int)> Func = [&results](const int num) {
+    results[num] = 1;
+  };
+
+  ThreadPool pool(4);
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    pool.AddTask(Func, i);
+    pool.Wait();
+
+    for (size_t j = 0; j < results.size(); ++j) {
+      if (j <= i) {
+        BOOST_CHECK_EQUAL(results[j], 1);
+      } else {
+        BOOST_CHECK_EQUAL(results[j], 0);
+      }
+    }
+  }
+
+  pool.Wait();
 }
 
 BOOST_AUTO_TEST_CASE(TestThreadPoolGetThreadIndex) {

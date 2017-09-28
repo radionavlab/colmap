@@ -87,6 +87,8 @@ static const int kInvalidCameraModelId = -1;
   static inline std::vector<size_t> InitializeFocalLengthIdxs();               \
   static inline std::vector<size_t> InitializePrincipalPointIdxs();            \
   static inline std::vector<size_t> InitializeExtraParamsIdxs();               \
+  static inline std::vector<double> InitializeParams(                          \
+      const double focal_length, const size_t width, const size_t height);     \
                                                                                \
   template <typename T>                                                        \
   static void WorldToImage(const T* params, const T u, const T v, T* x, T* y); \
@@ -355,10 +357,10 @@ std::string CameraModelIdToName(const int model_id);
 // @param focal_length  Focal length, equal for all focal length parameters.
 // @param width         Sensor width of the camera.
 // @param height        Sensor height of the camera.
-// @param params        Array of camera parameters.
-void CameraModelInitializeParams(const int model_id, const double focal_length,
-                                 const size_t width, const size_t height,
-                                 std::vector<double>* params);
+std::vector<double> CameraModelInitializeParams(const int model_id,
+                                                const double focal_length,
+                                                const size_t width,
+                                                const size_t height);
 
 // Get human-readable information about the parameter vector order.
 //
@@ -574,21 +576,20 @@ std::string SimplePinholeCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> SimplePinholeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 0;
-  return idxs;
+  return {0};
 }
 
 std::vector<size_t> SimplePinholeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 1;
-  idxs[1] = 2;
-  return idxs;
+  return {1, 2};
 }
 
 std::vector<size_t> SimplePinholeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs;
-  return idxs;
+  return {};
+}
+
+std::vector<double> SimplePinholeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0};
 }
 
 template <typename T>
@@ -624,22 +625,20 @@ std::string PinholeCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> PinholeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t> PinholeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
 std::vector<size_t> PinholeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs;
-  return idxs;
+  return {};
+}
+
+std::vector<double> PinholeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, focal_length, width / 2.0, height / 2.0};
 }
 
 template <typename T>
@@ -677,22 +676,20 @@ std::string SimpleRadialCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> SimpleRadialCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 0;
-  return idxs;
+  return {0};
 }
 
 std::vector<size_t> SimpleRadialCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 1;
-  idxs[1] = 2;
-  return idxs;
+  return {1, 2};
 }
 
 std::vector<size_t> SimpleRadialCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 3;
-  return idxs;
+  return {3};
+}
+
+std::vector<double> SimpleRadialCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0, 0};
 }
 
 template <typename T>
@@ -748,23 +745,20 @@ std::string RadialCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> RadialCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 0;
-  return idxs;
+  return {0};
 }
 
 std::vector<size_t> RadialCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 1;
-  idxs[1] = 2;
-  return idxs;
+  return {1, 2};
 }
 
 std::vector<size_t> RadialCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 3;
-  idxs[1] = 4;
-  return idxs;
+  return {3, 4};
+}
+
+std::vector<double> RadialCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0, 0, 0};
 }
 
 template <typename T>
@@ -821,26 +815,20 @@ std::string OpenCVCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> OpenCVCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t> OpenCVCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
 std::vector<size_t> OpenCVCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(4);
-  idxs[0] = 4;
-  idxs[1] = 5;
-  idxs[2] = 6;
-  idxs[3] = 7;
-  return idxs;
+  return {4, 5, 6, 7};
+}
+
+std::vector<double> OpenCVCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, focal_length, width / 2.0, height / 2.0, 0, 0, 0, 0};
 }
 
 template <typename T>
@@ -902,26 +890,20 @@ std::string OpenCVFisheyeCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> OpenCVFisheyeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t> OpenCVFisheyeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
 std::vector<size_t> OpenCVFisheyeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(4);
-  idxs[0] = 4;
-  idxs[1] = 5;
-  idxs[2] = 6;
-  idxs[3] = 7;
-  return idxs;
+  return {4, 5, 6, 7};
+}
+
+std::vector<double> OpenCVFisheyeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, focal_length, width / 2.0, height / 2.0, 0, 0, 0, 0};
 }
 
 template <typename T>
@@ -1003,30 +985,31 @@ std::string FullOpenCVCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> FullOpenCVCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t> FullOpenCVCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
 std::vector<size_t> FullOpenCVCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(8);
-  idxs[0] = 4;
-  idxs[1] = 5;
-  idxs[2] = 6;
-  idxs[3] = 7;
-  idxs[4] = 8;
-  idxs[5] = 9;
-  idxs[6] = 10;
-  idxs[7] = 11;
-  return idxs;
+  return {4, 5, 6, 7, 8, 9, 10, 11};
+}
+
+std::vector<double> FullOpenCVCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length,
+          focal_length,
+          width / 2.0,
+          height / 2.0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0};
 }
 
 template <typename T>
@@ -1095,23 +1078,19 @@ std::string FOVCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> FOVCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t> FOVCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
-std::vector<size_t> FOVCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 4;
-  return idxs;
+std::vector<size_t> FOVCameraModel::InitializeExtraParamsIdxs() { return {4}; }
+
+std::vector<double> FOVCameraModel::InitializeParams(const double focal_length,
+                                                     const size_t width,
+                                                     const size_t height) {
+  return {focal_length, focal_length, width / 2.0, height / 2.0, 1e-2};
 }
 
 template <typename T>
@@ -1231,24 +1210,22 @@ std::string SimpleRadialFisheyeCameraModel::InitializeParamsInfo() {
 
 std::vector<size_t>
 SimpleRadialFisheyeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 0;
-  return idxs;
+  return {0};
 }
 
 std::vector<size_t>
 SimpleRadialFisheyeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 1;
-  idxs[1] = 2;
-  return idxs;
+  return {1, 2};
 }
 
 std::vector<size_t>
 SimpleRadialFisheyeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 3;
-  return idxs;
+  return {3};
+}
+
+std::vector<double> SimpleRadialFisheyeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0, 0};
 }
 
 template <typename T>
@@ -1325,23 +1302,20 @@ std::string RadialFisheyeCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> RadialFisheyeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(1);
-  idxs[0] = 0;
-  return idxs;
+  return {0};
 }
 
 std::vector<size_t> RadialFisheyeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 1;
-  idxs[1] = 2;
-  return idxs;
+  return {1, 2};
 }
 
 std::vector<size_t> RadialFisheyeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 3;
-  idxs[1] = 4;
-  return idxs;
+  return {3, 4};
+}
+
+std::vector<double> RadialFisheyeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0, 0, 0};
 }
 
 template <typename T>
@@ -1418,31 +1392,32 @@ std::string ThinPrismFisheyeCameraModel::InitializeParamsInfo() {
 }
 
 std::vector<size_t> ThinPrismFisheyeCameraModel::InitializeFocalLengthIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 0;
-  idxs[1] = 1;
-  return idxs;
+  return {0, 1};
 }
 
 std::vector<size_t>
 ThinPrismFisheyeCameraModel::InitializePrincipalPointIdxs() {
-  std::vector<size_t> idxs(2);
-  idxs[0] = 2;
-  idxs[1] = 3;
-  return idxs;
+  return {2, 3};
 }
 
 std::vector<size_t> ThinPrismFisheyeCameraModel::InitializeExtraParamsIdxs() {
-  std::vector<size_t> idxs(8);
-  idxs[0] = 4;
-  idxs[1] = 5;
-  idxs[2] = 6;
-  idxs[3] = 7;
-  idxs[4] = 8;
-  idxs[5] = 9;
-  idxs[6] = 10;
-  idxs[7] = 11;
-  return idxs;
+  return {4, 5, 6, 7, 8, 9, 10, 11};
+}
+
+std::vector<double> ThinPrismFisheyeCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length,
+          focal_length,
+          width / 2.0,
+          height / 2.0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0};
 }
 
 template <typename T>

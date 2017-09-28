@@ -18,8 +18,6 @@
 
 #include <fstream>
 
-#include <boost/lexical_cast.hpp>
-
 #include "base/pose.h"
 #include "base/projection.h"
 #include "base/similarity_transform.h"
@@ -834,9 +832,9 @@ void Reconstruction::ImportPLY(const std::string& path) {
     if (line_elems.size() >= 3 && line_elems[0] == "element") {
       in_vertex_section = false;
       if (line_elems[1] == "vertex") {
-        num_vertices = boost::lexical_cast<size_t>(line_elems[2]);
+        num_vertices = std::stoll(line_elems[2]);
         in_vertex_section = true;
-      } else if (boost::lexical_cast<size_t>(line_elems[2]) > 0) {
+      } else if (std::stoll(line_elems[2]) > 0) {
         LOG(FATAL) << "Only vertex elements supported";
       }
     }
@@ -844,6 +842,8 @@ void Reconstruction::ImportPLY(const std::string& path) {
     if (!in_vertex_section) {
       continue;
     }
+
+    // Just render diffuse, ambient, specular colors as normal colors.
 
     if (line_elems.size() >= 3 && line_elems[0] == "property") {
       CHECK(line_elems[1] == "float" || line_elems[1] == "uchar")
@@ -858,15 +858,21 @@ void Reconstruction::ImportPLY(const std::string& path) {
         Z_index = index;
         Z_byte_pos = num_bytes_per_line;
       } else if (line == "property uchar r" || line == "property uchar red" ||
-                 line == "property uchar diffuse_red") {
+                 line == "property uchar diffuse_red" ||
+                 line == "property uchar ambient_red" ||
+                 line == "property uchar specular_red") {
         R_index = index;
         R_byte_pos = num_bytes_per_line;
       } else if (line == "property uchar g" || line == "property uchar green" ||
-                 line == "property uchar diffuse_green") {
+                 line == "property uchar diffuse_green" ||
+                 line == "property uchar ambient_green" ||
+                 line == "property uchar specular_green") {
         G_index = index;
         G_byte_pos = num_bytes_per_line;
       } else if (line == "property uchar b" || line == "property uchar blue" ||
-                 line == "property uchar diffuse_blue") {
+                 line == "property uchar diffuse_blue" ||
+                 line == "property uchar ambient_blue" ||
+                 line == "property uchar specular_blue") {
         B_index = index;
         B_byte_pos = num_bytes_per_line;
       }
@@ -882,9 +888,10 @@ void Reconstruction::ImportPLY(const std::string& path) {
     }
   }
 
-  CHECK(X_index != -1 && Y_index != -1 && Z_index != -1 && R_index != -1 &&
-        G_index != -1 && B_index != -1)
-      << "Invalid PLY file format: Must specify x, y, z, and color";
+  const bool is_rgb_missing = R_index == -1 || G_index == -1 || B_index == -1;
+
+  CHECK(X_index != -1 && Y_index != -1 && Z_index)
+      << "Invalid PLY file format: x, y, z properties missing";
 
   if (is_binary) {
     std::vector<char> buffer(num_bytes_per_line);
@@ -901,12 +908,16 @@ void Reconstruction::ImportPLY(const std::string& path) {
         xyz(2) = LittleEndianToNative(
             *reinterpret_cast<float*>(&buffer[Z_byte_pos]));
 
-        rgb(0) = LittleEndianToNative(
-            *reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
-        rgb(1) = LittleEndianToNative(
-            *reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
-        rgb(2) = LittleEndianToNative(
-            *reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
+        if (is_rgb_missing) {
+          rgb.setZero();
+        } else {
+          rgb(0) = LittleEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
+          rgb(1) = LittleEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
+          rgb(2) = LittleEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
+        }
       } else {
         xyz(0) =
             BigEndianToNative(*reinterpret_cast<float*>(&buffer[X_byte_pos]));
@@ -915,12 +926,16 @@ void Reconstruction::ImportPLY(const std::string& path) {
         xyz(2) =
             BigEndianToNative(*reinterpret_cast<float*>(&buffer[Z_byte_pos]));
 
-        rgb(0) =
-            BigEndianToNative(*reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
-        rgb(1) =
-            BigEndianToNative(*reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
-        rgb(2) =
-            BigEndianToNative(*reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
+        if (is_rgb_missing) {
+          rgb.setZero();
+        } else {
+          rgb(0) = BigEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
+          rgb(1) = BigEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
+          rgb(2) = BigEndianToNative(
+              *reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
+        }
       }
 
       const point3D_t point3D_id = AddPoint3D(xyz, Track());
@@ -940,14 +955,18 @@ void Reconstruction::ImportPLY(const std::string& path) {
       }
 
       Eigen::Vector3d xyz;
-      xyz(0) = boost::lexical_cast<double>(items.at(X_index));
-      xyz(1) = boost::lexical_cast<double>(items.at(Y_index));
-      xyz(2) = boost::lexical_cast<double>(items.at(Z_index));
+      xyz(0) = std::stod(items.at(X_index));
+      xyz(1) = std::stod(items.at(Y_index));
+      xyz(2) = std::stod(items.at(Z_index));
 
       Eigen::Vector3i rgb;
-      rgb(0) = boost::lexical_cast<int>(items.at(R_index));
-      rgb(1) = boost::lexical_cast<int>(items.at(G_index));
-      rgb(2) = boost::lexical_cast<int>(items.at(B_index));
+      if (is_rgb_missing) {
+        rgb.setZero();
+      } else {
+        rgb(0) = std::stoi(items.at(R_index));
+        rgb(1) = std::stoi(items.at(G_index));
+        rgb(2) = std::stoi(items.at(B_index));
+      }
 
       const point3D_t point3D_id = AddPoint3D(xyz, Track());
       Point3D(point3D_id).SetColor(rgb.cast<uint8_t>());
@@ -1618,30 +1637,25 @@ void Reconstruction::ReadCamerasText(const std::string& path) {
 
     // ID
     std::getline(line_stream, item, ' ');
-    StringTrim(&item);
-    camera.SetCameraId(boost::lexical_cast<camera_t>(item));
+    camera.SetCameraId(std::stoi(item));
 
     // MODEL
     std::getline(line_stream, item, ' ');
-    StringTrim(&item);
     camera.SetModelIdFromName(item);
 
     // WIDTH
     std::getline(line_stream, item, ' ');
-    StringTrim(&item);
-    camera.SetWidth(boost::lexical_cast<size_t>(item));
+    camera.SetWidth(std::stoll(item));
 
     // HEIGHT
     std::getline(line_stream, item, ' ');
-    StringTrim(&item);
-    camera.SetHeight(boost::lexical_cast<size_t>(item));
+    camera.SetHeight(std::stoll(item));
 
     // PARAMS
     camera.Params().clear();
     while (!line_stream.eof()) {
       std::getline(line_stream, item, ' ');
-      StringTrim(&item);
-      camera.Params().push_back(boost::lexical_cast<double>(item));
+      camera.Params().push_back(std::stod(item));
     }
 
     CHECK(camera.VerifyParams());
@@ -1670,7 +1684,7 @@ void Reconstruction::ReadImagesText(const std::string& path) {
 
     // ID
     std::getline(line_stream1, item, ' ');
-    const image_t image_id = boost::lexical_cast<image_t>(item);
+    const image_t image_id = std::stoi(item);
 
     class Image image;
     image.SetImageId(image_id);
@@ -1680,32 +1694,32 @@ void Reconstruction::ReadImagesText(const std::string& path) {
 
     // QVEC (qw, qx, qy, qz)
     std::getline(line_stream1, item, ' ');
-    image.Qvec(0) = boost::lexical_cast<double>(item);
+    image.Qvec(0) = std::stod(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(1) = boost::lexical_cast<double>(item);
+    image.Qvec(1) = std::stod(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(2) = boost::lexical_cast<double>(item);
+    image.Qvec(2) = std::stod(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(3) = boost::lexical_cast<double>(item);
+    image.Qvec(3) = std::stod(item);
 
     image.NormalizeQvec();
 
     // TVEC
     std::getline(line_stream1, item, ' ');
-    image.Tvec(0) = boost::lexical_cast<double>(item);
+    image.Tvec(0) = std::stod(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Tvec(1) = boost::lexical_cast<double>(item);
+    image.Tvec(1) = std::stod(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Tvec(2) = boost::lexical_cast<double>(item);
+    image.Tvec(2) = std::stod(item);
 
     // CAMERA_ID
     std::getline(line_stream1, item, ' ');
-    image.SetCameraId(boost::lexical_cast<camera_t>(item));
+    image.SetCameraId(std::stoi(item));
 
     // NAME
     std::getline(line_stream1, item, ' ');
@@ -1727,10 +1741,10 @@ void Reconstruction::ReadImagesText(const std::string& path) {
         Eigen::Vector2d point;
 
         std::getline(line_stream2, item, ' ');
-        point.x() = boost::lexical_cast<double>(item);
+        point.x() = std::stod(item);
 
         std::getline(line_stream2, item, ' ');
-        point.y() = boost::lexical_cast<double>(item);
+        point.y() = std::stod(item);
 
         points2D.push_back(point);
 
@@ -1738,7 +1752,7 @@ void Reconstruction::ReadImagesText(const std::string& path) {
         if (item == "-1") {
           point3D_ids.push_back(kInvalidPoint3DId);
         } else {
-          point3D_ids.push_back(boost::lexical_cast<point3D_t>(item));
+          point3D_ids.push_back(std::stoll(item));
         }
       }
     }
@@ -1777,7 +1791,7 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
 
     // ID
     std::getline(line_stream, item, ' ');
-    const point3D_t point3D_id = boost::lexical_cast<point3D_t>(item);
+    const point3D_t point3D_id = std::stoll(item);
 
     // Make sure, that we can add new 3D points after reading 3D points
     // without overwriting existing 3D points.
@@ -1787,27 +1801,27 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
 
     // XYZ
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(0) = boost::lexical_cast<double>(item);
+    point3D.XYZ(0) = std::stod(item);
 
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(1) = boost::lexical_cast<double>(item);
+    point3D.XYZ(1) = std::stod(item);
 
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(2) = boost::lexical_cast<double>(item);
+    point3D.XYZ(2) = std::stod(item);
 
     // Color
     std::getline(line_stream, item, ' ');
-    point3D.Color(0) = static_cast<uint8_t>(boost::lexical_cast<int>(item));
+    point3D.Color(0) = static_cast<uint8_t>(std::stoi(item));
 
     std::getline(line_stream, item, ' ');
-    point3D.Color(1) = static_cast<uint8_t>(boost::lexical_cast<int>(item));
+    point3D.Color(1) = static_cast<uint8_t>(std::stoi(item));
 
     std::getline(line_stream, item, ' ');
-    point3D.Color(2) = static_cast<uint8_t>(boost::lexical_cast<int>(item));
+    point3D.Color(2) = static_cast<uint8_t>(std::stoi(item));
 
     // ERROR
     std::getline(line_stream, item, ' ');
-    point3D.SetError(boost::lexical_cast<double>(item));
+    point3D.SetError(std::stod(item));
 
     // Uncertainty
     std::getline(line_stream, item, ' ');
@@ -1822,10 +1836,10 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
       if (item.empty()) {
         break;
       }
-      track_el.image_id = boost::lexical_cast<image_t>(item);
+      track_el.image_id = std::stoi(item);
 
       std::getline(line_stream, item, ' ');
-      track_el.point2D_idx = boost::lexical_cast<point2D_t>(item);
+      track_el.point2D_idx = std::stoi(item);
 
       point3D.Track().AddElement(track_el);
     }

@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "estimators/gp3p.h"
+#include "estimators/generalized_absolute_pose.h"
 
 #include <array>
 
 #include "base/polynomial.h"
 #include "base/projection.h"
-#include "estimators/gp3p_coeffs.h"
+#include "estimators/generalized_absolute_pose_coeffs.h"
 #include "util/logging.h"
 
 namespace colmap {
@@ -50,8 +50,8 @@ Eigen::Vector6d ComposePlueckerLine(const Eigen::Matrix3x4d& rel_tform,
   const Eigen::Vector3d bearing =
       inv_proj_matrix.leftCols<3>() * point2D.homogeneous();
   const Eigen::Vector3d proj_center = inv_proj_matrix.rightCols<1>();
+  const Eigen::Vector3d bearing_normalized = bearing.normalized();
   Eigen::Vector6d pluecker;
-  Eigen::Vector3d bearing_normalized = bearing.normalized();
   pluecker << bearing_normalized, proj_center.cross(bearing_normalized);
   return pluecker;
 }
@@ -176,7 +176,7 @@ std::vector<Eigen::Vector3d> ComputeDepthsSylvester(
         for (const double lambda_1_2 : lambdas_1_2) {
           const double kMaxLambdaDiff = 1e-3;
           if (std::abs(lambda_1_1 - lambda_1_2) < kMaxLambdaDiff) {
-            const double lambda_1 = (lambda_1_1 + lambda_1_1) / 2;
+            const double lambda_1 = (lambda_1_1 + lambda_1_2) / 2;
             depths.emplace_back(lambda_1, lambda_2, lambda_3);
           }
         }

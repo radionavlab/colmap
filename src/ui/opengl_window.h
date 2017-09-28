@@ -58,6 +58,11 @@ class OpenGLWindow : public QWindow {
 
   OpenGLWindow(QWidget* parent, OptionManager* options, QScreen* screen = 0);
 
+  void SetupGL();
+  void InitializeGL();
+  void ResizeGL();
+  void PaintGL();
+
   void Update();
   void Upload();
   void Clear();
@@ -74,7 +79,7 @@ class OpenGLWindow : public QWindow {
   void ChangeFocusDistance(const float delta);
   void ChangeNearPlane(const float delta);
   void ChangePointSize(const float delta);
-  void ChangeImageSize(const float delta);
+  void ChangeCameraSize(const float delta);
 
   void RotateView(const float x, const float y, const float prev_x,
                   const float prev_y);
@@ -118,13 +123,7 @@ class OpenGLWindow : public QWindow {
   void mouseMoveEvent(QMouseEvent* event);
   void wheelEvent(QWheelEvent* event);
 
-  void SetupGL();
-  void InitializeGL();
-  void ResizeGL();
-  void PaintGL();
-
-  void SetupPainters();
-
+  void InitializePainters();
   void InitializeSettings();
   void InitializeView();
 

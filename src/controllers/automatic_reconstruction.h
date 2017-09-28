@@ -59,15 +59,16 @@ class AutomaticReconstructionController : public Thread {
     bool dense = false;
 #endif
 
+    // The number of threads to use in all stages.
+    int num_threads = -1;
+
     // Whether to use the GPU in feature extraction and matching.
     bool use_gpu = true;
 
-// Whether to use OpenGL in GPU-based feature extraction and matching.
-#ifdef CUDA_ENABLED
-    bool use_opengl = false;
-#else
-    bool use_opengl = true;
-#endif
+    // Index of the GPU used for GPU stages. For multi-GPU computation,
+    // you should separate multiple GPU indices by comma, e.g., "0,1,2,3".
+    // By default, all GPUs will be used in all stages.
+    std::string gpu_index = "-1";
   };
 
   AutomaticReconstructionController(

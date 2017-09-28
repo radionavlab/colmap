@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.11)
 
 project(COLMAP)
 
-set(COLMAP_VERSION "3.1")
+set(COLMAP_VERSION "3.2")
 
 
 ################################################################################
@@ -31,6 +31,7 @@ endif()
 option(OPENMP_ENABLED "Whether to enable OpenMP" ON)
 option(LTO_ENABLED "Whether to enable link-time optimization" ON)
 option(CUDA_ENABLED "Whether to enable CUDA, if available" ON)
+option(OPENGL_ENABLED "Whether to enable OpenGL, if available" ON)
 option(TESTS_ENABLED "Whether to build test binaries" ON)
 option(PROFILING_ENABLED "Whether to enable google-perftools linker flags" OFF)
 option(BOOST_STATIC "Whether to enable static boost library linker flags" ON)
@@ -97,6 +98,7 @@ endif()
 if(IS_MSVC)
     add_definitions("-DGLOG_NO_ABBREVIATED_SEVERITIES")
     add_definitions("-DGL_GLEXT_PROTOTYPES")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 endif()
@@ -162,6 +164,13 @@ else()
     endif()
 endif()
 
+if(OPENGL_ENABLED)
+    add_definitions("-DOPENGL_ENABLED")
+    message(STATUS "Enabling OpenGL support")
+else()
+    message(STATUS "Disabling OpenGL support")
+endif()
+
 if(PROFILING_ENABLED)
     message(STATUS "Enabling profiling support")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -lprofiler -ltcmalloc")
@@ -173,6 +182,9 @@ endif()
 # Qt5 was built with -reduce-relocations.
 if(Qt5_POSITION_INDEPENDENT_CODE)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    if(CUDA_ENABLED AND NOT IS_MSVC)
+        list(APPEND CUDA_NVCC_FLAGS "--compiler-options -fPIC")
+    endif()
 endif()
 
 

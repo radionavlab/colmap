@@ -169,15 +169,30 @@ Note that dense reconstruction must be re-run from scratch after adding new
 images, as the coordinate frame of the model is changed.
 
 
-Multi-GPU support in feature matching
--------------------------------------
+Available functionality without GPU/CUDA
+----------------------------------------
 
-You can run feature matching on multiple GPUs by specifying multiple indices for
-CUDA-enabled GPUs, e.g., ``--SiftMatching.gpu_index=0,1,2,3`` runs the feature
-matching on 4 GPUs in parallel. You can also run multiple feature matching
-threads on the same GPU by specifying the same GPU index twice, e.g.,
-``--SiftMatching.gpu_index=0,0,1,1,2,3``. By default, COLMAP runs one feature
-matching thread per CUDA-enabled GPU.
+If you do not have a CUDA-enabled GPU but some other GPU, you can use all COLMAP
+functionality except the dense reconstruction part. However, you can use
+external dense reconstruction software as an alternative, as described in the
+:ref:`Tutorial <dense-reconstruction>`. If you have a GPU with low compute power
+or you want to execute COLMAP on a machine without an attached display and
+without CUDA support, you can run all steps on the CPU by specifying the
+appropriate options (e.g., ``--SiftExtraction.use_gpu=false`` for the feature
+extraction step). But not that this might result in a significant slow-down of
+the reconstruction pipeline.
+
+
+Multi-GPU support in feature extraction/matching
+------------------------------------------------
+
+You can run feature extraction/matching on multiple GPUs by specifying multiple
+indices for CUDA-enabled GPUs, e.g., ``--SiftExtraction.gpu_index=0,1,2,3`` and
+``--SiftMatching.gpu_index=0,1,2,3`` runs the feature extraction/matching on 4
+GPUs in parallel. Note that you can only run one thread per GPU and this
+typically also gives the best performance. By default, COLMAP runs one feature
+extraction/matching thread per CUDA-enabled GPU and this usually gives the best
+performance as compared to running multiple threads on the same GPU.
 
 
 Feature matching fails due to illegal memory access
@@ -186,6 +201,11 @@ Feature matching fails due to illegal memory access
 If you encounter the following error message::
 
     MultiplyDescriptor: an illegal memory access was encountered
+
+or the following:
+
+    ERROR: Feature matching failed. This probably caused by insufficient GPU
+           memory. Consider reducing the maximum number of features.
 
 during feature matching, your GPU runs out of memory. Try decreasing the option
 ``--SiftMatching.max_num_matches`` until the error disappears. Note that this
@@ -206,6 +226,53 @@ too many outlier surfaces, you should reduce the value of option
 ``--DenseMeshing.trim`` to decrease the surface are and vice versa to increase
 it. Also consider to try the reduce the outliers or increase the completeness in
 the fusion stage, as described above.
+
+
+Improving dense reconstruction results for weakly textured surfaces
+-------------------------------------------------------------------
+
+For scenes with weakly textured surfaces it can help to have a high resolution
+of the input images (``--DenseStereo.max_image_size``) and a large patch window
+radius (``--DenseStereo.window_radius``). You may also want to reduce the
+filtering threshold for the photometric consistency cost
+(``--DenseStereo.filter_min_ncc``).
+
+
+Speedup dense reconstruction
+----------------------------
+
+The dense reconstruction can be speeded up in multiple ways:
+
+- Put more GPUs in your system as the dense reconstruction can make use of
+  multiple GPUs during the stereo reconstruction step. Put more RAM into your
+  system and increase the ``--DenseStereo.cache_size``,
+  ``--DenseFusion.cache_size`` to the largest possible value in order to
+  speed up the dense fusion step.
+
+- Do not perform geometric dense stereo reconstruction
+  ``--DenseStereo.geom_consistency false``. Make sure to also enable
+  ``--DenseStereo.filter true`` in this case.
+
+- Reduce the ``--DenseStereo.max_image_size``, ``--DenseFusion.max_image_size``
+  values to perform dense reconstruction on a maximum image resolution.
+
+- Reduce the number of source images per reference image to be considered, as
+  described :ref:`here <faq-dense-memory>`.
+
+- Reduce the patch window radius ``--DenseStereo.window_radius``.
+
+- Reduce the number of patch match iterations ``--DenseStereo.num_iterations``.
+
+- Reduce the number of sampled views ``--DenseStereo.num_samples``.
+
+- To speedup the dense fusion step for very large reconstructions, you can
+  use CMVS to partition your scene into multiple clusters,
+  as described :ref:`here <faq-dense-memory>`.
+
+Note that apart from upgrading your hardware, the proposed changes might degrade
+the quality of the dense reconstruction results. When cancelling the stereo
+reconstruction process and restarting it later, the previous progress is not
+lost and any already processed views will be skipped.
 
 
 .. _faq-dense-memory:
@@ -263,7 +330,7 @@ You can run dense reconstruction on multiple GPUs by specifying multiple indices
 for CUDA-enabled GPUs, e.g., ``--DenseStereo.gpu_index=0,1,2,3`` runs the dense
 reconstruction on 4 GPUs in parallel. You can also run multiple dense
 reconstruction threads on the same GPU by specifying the same GPU index twice,
-e.g., ``--SiftMatching.gpu_index=0,0,1,1,2,3``. By default, COLMAP runs one
+e.g., ``--DenseStereo.gpu_index=0,0,1,1,2,3``. By default, COLMAP runs one
 dense reconstruction thread per CUDA-enabled GPU.
 
 
@@ -286,7 +353,12 @@ stereo reconstruction process. The solution is to increase the so-called
 "Timeout Detection & Recovery" (TDR) delay to a larger value. Please, refer to
 the `NVIDIA Nsight documentation <https://goo.gl/UWKVs6>`_ or to the `Microsoft
 documentation <http://www.microsoft.com/whdc/device/display/wddm_timeout.mspx>`_
-on how to increase the delay time under Windows.
+on how to increase the delay time under Windows. You can increase the delay
+using the following Windows Registry entries::
+
+    [HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers]
+    "TdrLevel"=dword:00000001
+    "TdrDelay"=dword:00000120
 
 The X window system under Linux/Unix has a similar feature and detects response
 problems of the GPU. The easiest solution to avoid timeout problems under the X

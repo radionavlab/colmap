@@ -31,8 +31,8 @@ bool ImageReader::Options::Check() const {
   return true;
 }
 
-ImageReader::ImageReader(const Options& options)
-    : options_(options), image_index_(0) {
+ImageReader::ImageReader(const Options& options, Database* database)
+    : options_(options), database_(database), image_index_(0) {
   CHECK(options_.Check());
 
   // Ensure trailing slash, so that we can build the correct image name.
@@ -57,18 +57,18 @@ ImageReader::ImageReader(const Options& options)
   }
 }
 
-bool ImageReader::Next(Image* image, Bitmap* bitmap) {
+ImageReader::Status ImageReader::Next(Camera* camera, Image* image,
+                                      Bitmap* bitmap) {
+  CHECK_NOTNULL(camera);
   CHECK_NOTNULL(image);
   CHECK_NOTNULL(bitmap);
 
   image_index_ += 1;
-  if (image_index_ > options_.image_list.size()) {
-    return false;
-  }
+  CHECK_LE(image_index_, options_.image_list.size());
 
   const std::string image_path = options_.image_list.at(image_index_ - 1);
 
-  Database database(options_.database_path);
+  DatabaseTransaction database_transaction(database_);
 
   //////////////////////////////////////////////////////////////////////////////
   // Set the image name.
@@ -80,24 +80,20 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
       image->Name().substr(options_.image_path.size(),
                            image->Name().size() - options_.image_path.size()));
 
-  std::cout << "  Name:           " << image->Name() << std::endl;
-
   //////////////////////////////////////////////////////////////////////////////
   // Check if image already read.
   //////////////////////////////////////////////////////////////////////////////
 
-  const bool exists_image = database.ExistsImageWithName(image->Name());
+  const bool exists_image = database_->ExistsImageWithName(image->Name());
 
   if (exists_image) {
-    const DatabaseTransaction database_transaction(&database);
-    *image = database.ReadImageWithName(image->Name());
-    const bool exists_keypoints = database.ExistsKeypoints(image->ImageId());
+    *image = database_->ReadImageWithName(image->Name());
+    const bool exists_keypoints = database_->ExistsKeypoints(image->ImageId());
     const bool exists_descriptors =
-        database.ExistsDescriptors(image->ImageId());
+        database_->ExistsDescriptors(image->ImageId());
 
     if (exists_keypoints && exists_descriptors) {
-      std::cout << "  SKIP: Features already extracted." << std::endl;
-      return false;
+      return Status::IMAGE_EXISTS;
     }
   }
 
@@ -106,9 +102,7 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
   //////////////////////////////////////////////////////////////////////////////
 
   if (!bitmap->Read(image_path, false)) {
-    std::cout << "  SKIP: Cannot read image at path " << image_path
-              << std::endl;
-    return false;
+    return Status::BITMAP_ERROR;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -116,22 +110,17 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
   //////////////////////////////////////////////////////////////////////////////
 
   if (exists_image) {
-    const Camera camera = database.ReadCamera(image->CameraId());
+    const Camera camera = database_->ReadCamera(image->CameraId());
 
     if (options_.single_camera && prev_camera_.CameraId() != kInvalidCameraId &&
         (camera.Width() != prev_camera_.Width() ||
          camera.Height() != prev_camera_.Height())) {
-      std::cerr << "  ERROR: Single camera specified, but images have "
-                   "different dimensions."
-                << std::endl;
-      return false;
+      return Status::CAMERA_SINGLE_ERROR;
     }
 
     if (static_cast<size_t>(bitmap->Width()) != camera.Width() ||
         static_cast<size_t>(bitmap->Height()) != camera.Height()) {
-      std::cerr << "  ERROR: Image previously processed, but current version "
-                   "has different dimensions."
-                << std::endl;
+      return Status::CAMERA_DIM_ERROR;
     }
   }
 
@@ -142,19 +131,11 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
   if (options_.single_camera && prev_camera_.CameraId() != kInvalidCameraId &&
       (prev_camera_.Width() != static_cast<size_t>(bitmap->Width()) ||
        prev_camera_.Height() != static_cast<size_t>(bitmap->Height()))) {
-    std::cerr << "  ERROR: Single camera specified, but images have "
-                 "different dimensions."
-              << std::endl;
-    return false;
+    return Status::CAMERA_SINGLE_ERROR;
   }
 
   prev_camera_.SetWidth(static_cast<size_t>(bitmap->Width()));
   prev_camera_.SetHeight(static_cast<size_t>(bitmap->Height()));
-
-  std::cout << "  Width:          " << prev_camera_.Width() << "px"
-            << std::endl;
-  std::cout << "  Height:         " << prev_camera_.Height() << "px"
-            << std::endl;
 
   //////////////////////////////////////////////////////////////////////////////
   // Extract camera model and focal length
@@ -166,13 +147,10 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
       double focal_length = 0.0;
       if (bitmap->ExifFocalLength(&focal_length)) {
         prev_camera_.SetPriorFocalLength(true);
-        std::cout << "  Focal length:   " << focal_length << "px (EXIF)"
-                  << std::endl;
       } else {
         focal_length = options_.default_focal_length_factor *
                        std::max(bitmap->Width(), bitmap->Height());
         prev_camera_.SetPriorFocalLength(false);
-        std::cout << "  Focal length:   " << focal_length << "px" << std::endl;
       }
 
       prev_camera_.InitializeWithId(prev_camera_.ModelId(), focal_length,
@@ -181,36 +159,29 @@ bool ImageReader::Next(Image* image, Bitmap* bitmap) {
     }
 
     if (!prev_camera_.VerifyParams()) {
-      std::cerr << "  ERROR: Invalid camera parameters." << std::endl;
-      return false;
+      return Status::CAMERA_PARAM_ERROR;
     }
 
-    prev_camera_.SetCameraId(database.WriteCamera(prev_camera_));
+    prev_camera_.SetCameraId(database_->WriteCamera(prev_camera_));
   }
 
   image->SetCameraId(prev_camera_.CameraId());
-
-  std::cout << "  Camera ID:      " << prev_camera_.CameraId() << std::endl;
-  std::cout << "  Camera Model:   " << prev_camera_.ModelName() << std::endl;
 
   //////////////////////////////////////////////////////////////////////////////
   // Extract GPS data.
   //////////////////////////////////////////////////////////////////////////////
 
-  if (bitmap->ExifLatitude(&image->TvecPrior(0)) &&
-      bitmap->ExifLongitude(&image->TvecPrior(1)) &&
-      bitmap->ExifAltitude(&image->TvecPrior(2))) {
-    std::cout << StringPrintf("  EXIF GPS:       LAT=%.3f, LON=%.3f, ALT=%.3f",
-                              image->TvecPrior(0), image->TvecPrior(1),
-                              image->TvecPrior(2))
-              << std::endl;
-  } else {
+  if (!bitmap->ExifLatitude(&image->TvecPrior(0)) ||
+      !bitmap->ExifLongitude(&image->TvecPrior(1)) ||
+      !bitmap->ExifAltitude(&image->TvecPrior(2))) {
     image->TvecPrior(0) = std::numeric_limits<double>::quiet_NaN();
     image->TvecPrior(1) = std::numeric_limits<double>::quiet_NaN();
     image->TvecPrior(2) = std::numeric_limits<double>::quiet_NaN();
   }
 
-  return true;
+  *camera = prev_camera_;
+
+  return Status::SUCCESS;
 }
 
 size_t ImageReader::NextIndex() const { return image_index_; }

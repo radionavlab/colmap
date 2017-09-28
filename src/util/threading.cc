@@ -25,7 +25,9 @@ Thread::Thread()
       stopped_(false),
       paused_(false),
       pausing_(false),
-      finished_(false) {
+      finished_(false),
+      setup_(false),
+      setup_valid_(false) {
   RegisterCallback(STARTED_CALLBACK);
   RegisterCallback(FINISHED_CALLBACK);
 }
@@ -41,6 +43,8 @@ void Thread::Start() {
   paused_ = false;
   pausing_ = false;
   finished_ = false;
+  setup_ = false;
+  setup_valid_ = false;
 }
 
 void Thread::Stop() {
@@ -116,6 +120,22 @@ std::thread::id Thread::GetThreadId() const {
   return std::this_thread::get_id();
 }
 
+void Thread::SignalValidSetup() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  CHECK(!setup_);
+  setup_ = true;
+  setup_valid_ = true;
+  setup_condition_.notify_all();
+}
+
+void Thread::SignalInvalidSetup() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  CHECK(!setup_);
+  setup_ = true;
+  setup_valid_ = false;
+  setup_condition_.notify_all();
+}
+
 const class Timer& Thread::GetTimer() const { return timer_; }
 
 void Thread::BlockIfPaused() {
@@ -127,6 +147,14 @@ void Thread::BlockIfPaused() {
     pausing_ = false;
     timer_.Resume();
   }
+}
+
+bool Thread::CheckValidSetup() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (!setup_) {
+    setup_condition_.wait(lock);
+  }
+  return setup_valid_;
 }
 
 void Thread::RunFunc() {
@@ -167,14 +195,17 @@ void ThreadPool::Stop() {
   }
 
   task_condition_.notify_all();
+
   for (auto& worker : workers_) {
     worker.join();
   }
+
+  finished_condition_.notify_all();
 }
 
 void ThreadPool::Wait() {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (num_active_workers_ > 0) {
+  if (!tasks_.empty() || num_active_workers_ > 0) {
     finished_condition_.wait(
         lock, [this]() { return tasks_.empty() && num_active_workers_ == 0; });
   }
@@ -207,7 +238,7 @@ void ThreadPool::WorkerFunc(const int index) {
       num_active_workers_ -= 1;
     }
 
-    finished_condition_.notify_one();
+    finished_condition_.notify_all();
   }
 }
 

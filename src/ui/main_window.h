@@ -51,10 +51,8 @@ class MainWindow : public QMainWindow {
 
  protected:
   void showEvent(QShowEvent* event);
-  void closeEvent(QCloseEvent* event);
-
-  // Custom event that is called after `showEvent` by a timer.
   void afterShowEvent();
+  void closeEvent(QCloseEvent* event);
 
  private:
   friend class AutomaticReconstructionWidget;
@@ -140,12 +138,9 @@ class MainWindow : public QMainWindow {
   ReconstructionManager reconstruction_manager_;
   std::unique_ptr<IncrementalMapperController> mapper_controller_;
 
-  OpenGLWindow* opengl_window_;
-
   Timer timer_;
 
-  QTimer* after_show_event_timer_;
-
+  OpenGLWindow* opengl_window_;
   ProjectWidget* project_widget_;
   FeatureExtractionWidget* feature_extraction_widget_;
   FeatureMatchingWidget* feature_matching_widget_;
@@ -173,6 +168,8 @@ class MainWindow : public QMainWindow {
 
   QTimer* statusbar_timer_;
   QLabel* statusbar_timer_label_;
+
+  QAction* after_show_event_;
 
   QAction* action_project_new_;
   QAction* action_project_open_;
