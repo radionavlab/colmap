@@ -23,7 +23,6 @@
 #include <vector>
 
 #include <boost/filesystem.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include "util/endian.h"
 #include "util/logging.h"
@@ -105,9 +104,6 @@ std::vector<T> CSVToVector(const std::string& csv);
 template <typename T>
 std::string VectorToCSV(const std::vector<T>& values);
 
-// Check the order in which bytes are stored in computer memory.
-bool IsBigEndian();
-
 // Read contiguous binary blob from file.
 template <typename T>
 void ReadBinaryBlob(const std::string& path, std::vector<T>* data);
@@ -144,25 +140,6 @@ bool VectorContainsDuplicateValues(const std::vector<T>& vector) {
   std::vector<T> unique_vector = vector;
   return std::unique(unique_vector.begin(), unique_vector.end()) !=
          unique_vector.end();
-}
-
-template <typename T>
-std::vector<T> CSVToVector(const std::string& csv) {
-  auto elems = StringSplit(csv, ",;");
-  std::vector<T> values;
-  values.reserve(elems.size());
-  for (auto& elem : elems) {
-    StringTrim(&elem);
-    if (elem.empty()) {
-      continue;
-    }
-    try {
-      values.push_back(boost::lexical_cast<T>(elem));
-    } catch (std::exception) {
-      return std::vector<T>(0);
-    }
-  }
-  return values;
 }
 
 template <typename T>

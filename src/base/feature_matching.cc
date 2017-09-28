@@ -292,7 +292,9 @@ void WarnIfMaxNumMatchesReachedGPU(const SiftMatchGPU& sift_match_gpu,
 }  // namespace
 
 bool SiftMatchingOptions::Check() const {
-  CHECK_OPTION_GT(CSVToVector<int>(gpu_index).size(), 0);
+  if (use_gpu) {
+    CHECK_OPTION_GT(CSVToVector<int>(gpu_index).size(), 0);
+  }
   CHECK_OPTION_GT(max_ratio, 0.0);
   CHECK_OPTION_GT(max_distance, 0.0);
   CHECK_OPTION_GT(max_error, 0.0);
@@ -406,31 +408,10 @@ void FeatureMatcherCache::DeleteInlierMatches(const image_t image_id1,
 
 FeatureMatcherThread::FeatureMatcherThread(const SiftMatchingOptions& options,
                                            FeatureMatcherCache* cache)
-    : options_(options), cache_(cache), is_valid_(false) {}
+    : options_(options), cache_(cache) {}
 
 void FeatureMatcherThread::SetMaxNumMatches(const int max_num_matches) {
   options_.max_num_matches = max_num_matches;
-}
-
-bool FeatureMatcherThread::IsValid() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (is_valid_) {
-    return true;
-  }
-  is_setup_.wait(lock);
-  return is_valid_;
-}
-
-void FeatureMatcherThread::SetValid() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  is_valid_ = true;
-  is_setup_.notify_all();
-}
-
-void FeatureMatcherThread::SetInvalid() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  is_valid_ = false;
-  is_setup_.notify_all();
 }
 
 SiftCPUFeatureMatcher::SiftCPUFeatureMatcher(const SiftMatchingOptions& options,
@@ -444,7 +425,7 @@ SiftCPUFeatureMatcher::SiftCPUFeatureMatcher(const SiftMatchingOptions& options,
 }
 
 void SiftCPUFeatureMatcher::Run() {
-  SetValid();
+  SignalValidSetup();
 
   while (true) {
     if (IsStopped()) {
@@ -453,20 +434,15 @@ void SiftCPUFeatureMatcher::Run() {
 
     const auto input_job = input_queue_->Pop();
     if (input_job.IsValid()) {
-      const auto& input = input_job.Data();
-
-      Output output;
-      output.image_id1 = input.image_id1;
-      output.image_id2 = input.image_id2;
+      auto data = input_job.Data();
 
       const FeatureDescriptors descriptors1 =
-          cache_->GetDescriptors(input.image_id1);
+          cache_->GetDescriptors(data.image_id1);
       const FeatureDescriptors descriptors2 =
-          cache_->GetDescriptors(input.image_id2);
-      MatchSiftFeaturesCPU(options_, descriptors1, descriptors2,
-                           &output.matches);
+          cache_->GetDescriptors(data.image_id2);
+      MatchSiftFeaturesCPU(options_, descriptors1, descriptors2, &data.matches);
 
-      CHECK(output_queue_->Push(output));
+      CHECK(output_queue_->Push(data));
     }
   }
 }
@@ -497,11 +473,11 @@ void SiftGPUFeatureMatcher::Run() {
   SiftMatchGPU sift_match_gpu;
   if (!CreateSiftGPUMatcher(options_, &sift_match_gpu)) {
     std::cout << "ERROR: SiftGPU not fully supported" << std::endl;
-    SetInvalid();
+    SignalInvalidSetup();
     return;
   }
 
-  SetValid();
+  SignalValidSetup();
 
   while (true) {
     if (IsStopped()) {
@@ -510,20 +486,16 @@ void SiftGPUFeatureMatcher::Run() {
 
     const auto input_job = input_queue_->Pop();
     if (input_job.IsValid()) {
-      const auto& input = input_job.Data();
-
-      Output output;
-      output.image_id1 = input.image_id1;
-      output.image_id2 = input.image_id2;
+      auto data = input_job.Data();
 
       const FeatureDescriptors* descriptors1_ptr;
-      GetDescriptorData(0, input.image_id1, &descriptors1_ptr);
+      GetDescriptorData(0, data.image_id1, &descriptors1_ptr);
       const FeatureDescriptors* descriptors2_ptr;
-      GetDescriptorData(1, input.image_id2, &descriptors2_ptr);
+      GetDescriptorData(1, data.image_id2, &descriptors2_ptr);
       MatchSiftFeaturesGPU(options_, descriptors1_ptr, descriptors2_ptr,
-                           &sift_match_gpu, &output.matches);
+                           &sift_match_gpu, &data.matches);
 
-      CHECK(output_queue_->Push(output));
+      CHECK(output_queue_->Push(data));
     }
   }
 }
@@ -552,7 +524,7 @@ GuidedSiftCPUFeatureMatcher::GuidedSiftCPUFeatureMatcher(
 }
 
 void GuidedSiftCPUFeatureMatcher::Run() {
-  SetValid();
+  SignalValidSetup();
 
   while (true) {
     if (IsStopped()) {
@@ -561,30 +533,24 @@ void GuidedSiftCPUFeatureMatcher::Run() {
 
     const auto input_job = input_queue_->Pop();
     if (input_job.IsValid()) {
-      const auto& input = input_job.Data();
+      auto data = input_job.Data();
 
-      Output output;
-      output.image_id1 = input.image_id1;
-      output.image_id2 = input.image_id2;
-      output.matches = input.matches;
-      output.two_view_geometry = input.two_view_geometry;
-
-      if (output.two_view_geometry.inlier_matches.size() <
+      if (data.two_view_geometry.inlier_matches.size() <
           static_cast<size_t>(options_.min_num_inliers)) {
-        CHECK(output_queue_->Push(output));
+        CHECK(output_queue_->Push(data));
         continue;
       }
 
-      const FeatureKeypoints keypoints1 = cache_->GetKeypoints(input.image_id1);
-      const FeatureKeypoints keypoints2 = cache_->GetKeypoints(input.image_id2);
+      const FeatureKeypoints keypoints1 = cache_->GetKeypoints(data.image_id1);
+      const FeatureKeypoints keypoints2 = cache_->GetKeypoints(data.image_id2);
       const FeatureDescriptors descriptors1 =
-          cache_->GetDescriptors(input.image_id1);
+          cache_->GetDescriptors(data.image_id1);
       const FeatureDescriptors descriptors2 =
-          cache_->GetDescriptors(input.image_id2);
+          cache_->GetDescriptors(data.image_id2);
       MatchGuidedSiftFeaturesCPU(options_, keypoints1, keypoints2, descriptors1,
-                                 descriptors2, &output.two_view_geometry);
+                                 descriptors2, &data.two_view_geometry);
 
-      CHECK(output_queue_->Push(output));
+      CHECK(output_queue_->Push(data));
     }
   }
 }
@@ -614,11 +580,11 @@ void GuidedSiftGPUFeatureMatcher::Run() {
   SiftMatchGPU sift_match_gpu;
   if (!CreateSiftGPUMatcher(options_, &sift_match_gpu)) {
     std::cout << "ERROR: SiftGPU not fully supported" << std::endl;
-    SetInvalid();
+    SignalInvalidSetup();
     return;
   }
 
-  SetValid();
+  SignalValidSetup();
 
   while (true) {
     if (IsStopped()) {
@@ -627,32 +593,26 @@ void GuidedSiftGPUFeatureMatcher::Run() {
 
     const auto input_job = input_queue_->Pop();
     if (input_job.IsValid()) {
-      const auto& input = input_job.Data();
+      auto data = input_job.Data();
 
-      Output output;
-      output.image_id1 = input.image_id1;
-      output.image_id2 = input.image_id2;
-      output.matches = input.matches;
-      output.two_view_geometry = input.two_view_geometry;
-
-      if (output.two_view_geometry.inlier_matches.size() <
+      if (data.two_view_geometry.inlier_matches.size() <
           static_cast<size_t>(options_.min_num_inliers)) {
-        CHECK(output_queue_->Push(output));
+        CHECK(output_queue_->Push(data));
         continue;
       }
 
       const FeatureDescriptors* descriptors1_ptr;
       const FeatureKeypoints* keypoints1_ptr;
-      GetFeatureData(0, input.image_id1, &keypoints1_ptr, &descriptors1_ptr);
+      GetFeatureData(0, data.image_id1, &keypoints1_ptr, &descriptors1_ptr);
       const FeatureDescriptors* descriptors2_ptr;
       const FeatureKeypoints* keypoints2_ptr;
-      GetFeatureData(1, input.image_id2, &keypoints2_ptr, &descriptors2_ptr);
+      GetFeatureData(1, data.image_id2, &keypoints2_ptr, &descriptors2_ptr);
 
       MatchGuidedSiftFeaturesGPU(options_, keypoints1_ptr, keypoints2_ptr,
                                  descriptors1_ptr, descriptors2_ptr,
-                                 &sift_match_gpu, &output.two_view_geometry);
+                                 &sift_match_gpu, &data.two_view_geometry);
 
-      CHECK(output_queue_->Push(output));
+      CHECK(output_queue_->Push(data));
     }
   }
 }
@@ -702,39 +662,33 @@ void TwoViewGeometryVerifier::Run() {
 
     const auto input_job = input_queue_->Pop();
     if (input_job.IsValid()) {
-      const auto& input = input_job.Data();
+      auto data = input_job.Data();
 
-      Output output;
-      output.image_id1 = input.image_id1;
-      output.image_id2 = input.image_id2;
-      output.matches = input.matches;
-
-      if (output.matches.size() <
-          static_cast<size_t>(options_.min_num_inliers)) {
-        CHECK(output_queue_->Push(output));
+      if (data.matches.size() < static_cast<size_t>(options_.min_num_inliers)) {
+        CHECK(output_queue_->Push(data));
         continue;
       }
 
       const auto& camera1 =
-          cache_->GetCamera(cache_->GetImage(input.image_id1).CameraId());
+          cache_->GetCamera(cache_->GetImage(data.image_id1).CameraId());
       const auto& camera2 =
-          cache_->GetCamera(cache_->GetImage(input.image_id2).CameraId());
-      const auto keypoints1 = cache_->GetKeypoints(input.image_id1);
-      const auto keypoints2 = cache_->GetKeypoints(input.image_id2);
+          cache_->GetCamera(cache_->GetImage(data.image_id2).CameraId());
+      const auto keypoints1 = cache_->GetKeypoints(data.image_id1);
+      const auto keypoints2 = cache_->GetKeypoints(data.image_id2);
       const auto points1 = FeatureKeypointsToPointsVector(keypoints1);
       const auto points2 = FeatureKeypointsToPointsVector(keypoints2);
 
       if (options_.multiple_models) {
-        output.two_view_geometry.EstimateMultiple(camera1, points1, camera2,
-                                                  points2, input.matches,
-                                                  two_view_geometry_options_);
+        data.two_view_geometry.EstimateMultiple(camera1, points1, camera2,
+                                                points2, data.matches,
+                                                two_view_geometry_options_);
       } else {
-        output.two_view_geometry.Estimate(camera1, points1, camera2, points2,
-                                          input.matches,
-                                          two_view_geometry_options_);
+        data.two_view_geometry.Estimate(camera1, points1, camera2, points2,
+                                        data.matches,
+                                        two_view_geometry_options_);
       }
 
-      CHECK(output_queue_->Push(output));
+      CHECK(output_queue_->Push(data));
     }
   }
 }
@@ -758,7 +712,7 @@ SiftFeatureMatcher::SiftFeatureMatcher(const SiftMatchingOptions& options,
     gpu_indices.resize(num_cuda_devices);
     std::iota(gpu_indices.begin(), gpu_indices.end(), 0);
   }
-#endif
+#endif  // CUDA_ENABLED
 
   if (options_.use_gpu) {
     auto gpu_options = options_;
@@ -862,13 +816,13 @@ bool SiftFeatureMatcher::Setup() {
   }
 
   for (auto& matcher : matchers_) {
-    if (!matcher->IsValid()) {
+    if (!matcher->CheckValidSetup()) {
       return false;
     }
   }
 
   for (auto& guided_matcher : guided_matchers_) {
-    if (!guided_matcher->IsValid()) {
+    if (!guided_matcher->CheckValidSetup()) {
       return false;
     }
   }
@@ -933,19 +887,16 @@ void SiftFeatureMatcher::Match(
       cache_->DeleteInlierMatches(image_pair.first, image_pair.second);
     }
 
+    internal::FeatureMatcherData data;
+    data.image_id1 = image_pair.first;
+    data.image_id2 = image_pair.second;
+
     if (exists_matches) {
-      internal::MatchData match_data;
-      match_data.image_id1 = image_pair.first;
-      match_data.image_id2 = image_pair.second;
-      match_data.matches =
-          cache_->GetMatches(image_pair.first, image_pair.second);
+      data.matches = cache_->GetMatches(image_pair.first, image_pair.second);
       cache_->DeleteMatches(image_pair.first, image_pair.second);
-      CHECK(verifier_queue_.Push(match_data));
+      CHECK(verifier_queue_.Push(data));
     } else {
-      internal::ImagePairData image_pair_data;
-      image_pair_data.image_id1 = image_pair.first;
-      image_pair_data.image_id2 = image_pair.second;
-      CHECK(matcher_queue_.Push(image_pair_data));
+      CHECK(matcher_queue_.Push(data));
     }
   }
 
@@ -1140,9 +1091,16 @@ void SequentialFeatureMatcher::RunSequentialMatching(
 
     image_pairs.clear();
     for (int i = 0; i < options_.overlap; ++i) {
-      const size_t image_idx2 = image_idx1 + (1 << i);
+      const size_t image_idx2 = image_idx1 + i;
       if (image_idx2 < image_ids.size()) {
         image_pairs.emplace_back(image_id1, image_ids.at(image_idx2));
+        if (options_.quadratic_overlap) {
+          const size_t image_idx2_quadratic = image_idx1 + (1 << i);
+          if (image_idx2_quadratic < image_ids.size()) {
+            image_pairs.emplace_back(image_id1,
+                                     image_ids.at(image_idx2_quadratic));
+          }
+        }
       } else {
         break;
       }
@@ -1912,7 +1870,7 @@ bool CreateSiftGPUMatcher(const SiftMatchingOptions& match_options,
   } else {
     sift_match_gpu->SetLanguage(SiftMatchGPU::SIFTMATCH_CUDA);
   }
-#else  // CUDA_ENABLED
+#else   // CUDA_ENABLED
   sift_match_gpu->SetLanguage(SiftMatchGPU::SIFTMATCH_GLSL);
 #endif  // CUDA_ENABLED
 
@@ -1976,9 +1934,9 @@ void MatchSiftFeaturesGPU(const SiftMatchingOptions& match_options,
       static_cast<float>(match_options.max_ratio), match_options.cross_check);
 
   if (num_matches < 0) {
-    std::cerr << "ERROR: Feature matching failed. This probably caused by "
+    std::cerr << "ERROR: Feature matching failed. This is probably caused by "
                  "insufficient GPU memory. Consider reducing the maximum "
-                 "number of features."
+                 "number of features and/or matches."
               << std::endl;
     matches->clear();
   } else {
@@ -2059,7 +2017,7 @@ void MatchGuidedSiftFeaturesGPU(const SiftMatchingOptions& match_options,
       match_options.cross_check);
 
   if (num_matches < 0) {
-    std::cerr << "ERROR: Feature matching failed. This probably caused by "
+    std::cerr << "ERROR: Feature matching failed. This is probably caused by "
                  "insufficient GPU memory. Consider reducing the maximum "
                  "number of features."
               << std::endl;

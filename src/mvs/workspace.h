@@ -43,11 +43,14 @@ class Workspace {
     std::string workspace_path;
     std::string workspace_format;
     std::string input_type;
+    std::string stereo_folder = "stereo";
   };
 
   Workspace(const Options& options);
 
   void ClearCache();
+
+  const Options& GetOptions() const;
 
   const Model& GetModel() const;
   const Bitmap& GetBitmap(const int image_id);
@@ -85,7 +88,14 @@ class Workspace {
   Options options_;
   Model model_;
   MemoryConstrainedLRUCache<int, CachedImage> cache_;
+  std::string depth_map_path_;
+  std::string normal_map_path_;
 };
+
+// Import a PMVS workspace into the COLMAP workspace format. Only images in the
+// provided option file name will be imported and used for reconstruction.
+void ImportPMVSWorkspace(const Workspace& workspace,
+                         const std::string& option_name);
 
 }  // namespace mvs
 }  // namespace colmap

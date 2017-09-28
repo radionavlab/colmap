@@ -86,26 +86,25 @@ AutomaticReconstructionController::AutomaticReconstructionController(
     option_manager_.dense_fusion->max_image_size = 1600;
   }  // else: high quality is the default.
 
+  option_manager_.sift_extraction->num_threads = options_.num_threads;
+  option_manager_.sift_matching->num_threads = options_.num_threads;
+  option_manager_.mapper->num_threads = options_.num_threads;
+  option_manager_.dense_meshing->num_threads = options_.num_threads;
+
   ImageReader::Options reader_options = *option_manager_.image_reader;
   reader_options.database_path = *option_manager_.database_path;
   reader_options.image_path = *option_manager_.image_path;
   reader_options.single_camera = options_.single_camera;
 
+  option_manager_.sift_extraction->use_gpu = options_.use_gpu;
   option_manager_.sift_matching->use_gpu = options_.use_gpu;
 
-  if (options_.use_gpu) {
-    if (!options_.use_opengl) {
-      option_manager_.sift_gpu_extraction->index = 0;
-    }
+  option_manager_.sift_extraction->gpu_index = options_.gpu_index;
+  option_manager_.sift_matching->gpu_index = options_.gpu_index;
+  option_manager_.dense_stereo->gpu_index = options_.gpu_index;
 
-    feature_extractor_.reset(new SiftGPUFeatureExtractor(
-        reader_options, *option_manager_.sift_extraction,
-        *option_manager_.sift_gpu_extraction));
-  } else {
-    feature_extractor_.reset(new SiftCPUFeatureExtractor(
-        reader_options, *option_manager_.sift_extraction,
-        *option_manager_.sift_cpu_extraction));
-  }
+  feature_extractor_.reset(new SiftFeatureExtractor(
+        reader_options, *option_manager_.sift_extraction));
 
   exhaustive_matcher_.reset(new ExhaustiveFeatureMatcher(
       *option_manager_.exhaustive_matching, *option_manager_.sift_matching,
@@ -295,7 +294,7 @@ void AutomaticReconstructionController::RunDenseMapper() {
 
     if (!ExistsFile(fused_path)) {
       mvs::StereoFusion fuser(
-          *option_manager_.dense_fusion, dense_path, "COLMAP",
+          *option_manager_.dense_fusion, dense_path, "COLMAP", "",
           options_.quality == Quality::HIGH ? "geometric" : "photometric");
       active_thread_ = &fuser;
       fuser.Start();

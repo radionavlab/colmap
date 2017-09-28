@@ -44,11 +44,11 @@ const ReconstructionManager& MainWindow::GetReconstructionManager() const {
 }
 
 void MainWindow::showEvent(QShowEvent* event) {
-  after_show_event_timer_ = new QTimer(this);
-  connect(after_show_event_timer_, &QTimer::timeout, this,
-          &MainWindow::afterShowEvent);
-  after_show_event_timer_->start(100);
+  after_show_event_->trigger();
+  event->accept();
 }
+
+void MainWindow::afterShowEvent() { opengl_window_->PaintGL(); }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
   if (window_closed_) {
@@ -86,11 +86,15 @@ void MainWindow::closeEvent(QCloseEvent* event) {
   }
 }
 
-void MainWindow::afterShowEvent() { after_show_event_timer_->stop(); }
-
 void MainWindow::CreateWidgets() {
   opengl_window_ = new OpenGLWindow(this, &options_);
-  setCentralWidget(QWidget::createWindowContainer(opengl_window_));
+
+#ifdef _MSC_VER
+  setCentralWidget(QWidget::createWindowContainer(opengl_window_, this,
+                                                  Qt::MSWindowsOwnDC));
+#else
+  setCentralWidget(QWidget::createWindowContainer(opengl_window_, this));
+#endif
 
   project_widget_ = new ProjectWidget(this, &options_);
   project_widget_->SetDatabasePath(*options_.database_path);
@@ -120,6 +124,10 @@ void MainWindow::CreateWidgets() {
 }
 
 void MainWindow::CreateActions() {
+  after_show_event_ = new QAction(tr("After show event"), this);
+  connect(after_show_event_, &QAction::triggered, this,
+          &MainWindow::afterShowEvent, Qt::QueuedConnection);
+
   //////////////////////////////////////////////////////////////////////////////
   // File actions
   //////////////////////////////////////////////////////////////////////////////

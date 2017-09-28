@@ -29,53 +29,6 @@
 
 namespace colmap {
 namespace mvs {
-namespace {
-
-void ImportPMVSOption(const Model& model, const std::string& path,
-                      const std::string& option_name) {
-  CreateDirIfNotExists(JoinPaths(path, "stereo"));
-  CreateDirIfNotExists(JoinPaths(path, "stereo/depth_maps"));
-  CreateDirIfNotExists(JoinPaths(path, "stereo/normal_maps"));
-  CreateDirIfNotExists(JoinPaths(path, "stereo/consistency_graphs"));
-
-  const auto option_lines = ReadTextFileLines(JoinPaths(path, option_name));
-  for (const auto& line : option_lines) {
-    if (StringStartsWith(line, "timages")) {
-      const auto elems = StringSplit(line, " ");
-      const int num_images = std::stoi(elems[1]);
-      CHECK_EQ(num_images + 2, elems.size());
-      std::vector<std::string> image_names;
-      image_names.reserve(num_images);
-      for (size_t i = 2; i < elems.size(); ++i) {
-        const int image_id = std::stoi(elems[i]);
-        const std::string image_name = model.GetImageName(image_id);
-        image_names.push_back(image_name);
-      }
-
-      const auto patch_match_path = JoinPaths(path, "stereo/patch-match.cfg");
-      const auto fusion_path = JoinPaths(path, "stereo/fusion.cfg");
-      std::ofstream patch_match_file(patch_match_path, std::ios::trunc);
-      std::ofstream fusion_file(fusion_path, std::ios::trunc);
-      CHECK(patch_match_file.is_open()) << patch_match_path;
-      CHECK(fusion_file.is_open()) << fusion_path;
-      for (const auto ref_image_name : image_names) {
-        patch_match_file << ref_image_name << std::endl;
-        fusion_file << ref_image_name << std::endl;
-        std::ostringstream line;
-        for (const auto& image_name : image_names) {
-          if (ref_image_name != image_name) {
-            line << image_name << ",";
-          }
-        }
-        const auto line_string = line.str();
-        patch_match_file << line_string.substr(0, line_string.size() - 1)
-                         << std::endl;
-      }
-    }
-  }
-}
-
-}  // namespace
 
 PatchMatch::PatchMatch(const Options& options, const Problem& problem)
     : options_(options), problem_(problem) {}
@@ -257,32 +210,45 @@ void PatchMatchController::Run() {
 
 void PatchMatchController::ReadWorkspace() {
   std::cout << "Reading workspace..." << std::endl;
+
   Workspace::Options workspace_options;
+
+  auto workspace_format_lower_case = workspace_format_;
+  StringToLower(&workspace_format_lower_case);
+  if (workspace_format_lower_case == "pmvs") {
+    workspace_options.stereo_folder =
+        StringPrintf("stereo-%s", pmvs_option_name_.c_str());
+  }
+
   workspace_options.max_image_size = options_.max_image_size;
   workspace_options.image_as_rgb = false;
   workspace_options.cache_size = options_.cache_size;
   workspace_options.workspace_path = workspace_path_;
   workspace_options.workspace_format = workspace_format_;
   workspace_options.input_type = options_.geom_consistency ? "photometric" : "";
+
   workspace_.reset(new Workspace(workspace_options));
+
+  if (workspace_format_lower_case == "pmvs") {
+    std::cout << StringPrintf("Importing PMVS workspace (option %s)...",
+                              pmvs_option_name_.c_str())
+              << std::endl;
+    ImportPMVSWorkspace(*workspace_, pmvs_option_name_);
+  }
+
   depth_ranges_ = workspace_->GetModel().ComputeDepthRanges();
 }
 
 void PatchMatchController::ReadProblems() {
-  problems_.clear();
-
-  const auto model = workspace_->GetModel();
-
-  if (workspace_format_ == "PMVS") {
-    std::cout << "Importing PMVS options..." << std::endl;
-    ImportPMVSOption(model, workspace_path_, pmvs_option_name_);
-  }
-
   std::cout << "Reading configuration..." << std::endl;
 
-  const auto config_path = JoinPaths(workspace_path_, "stereo/patch-match.cfg");
-  std::ifstream file(config_path);
-  CHECK(file.is_open()) << config_path;
+  problems_.clear();
+
+  const auto& model = workspace_->GetModel();
+
+  std::vector<std::string> config = ReadTextFileLines(
+      JoinPaths(workspace_path_, workspace_->GetOptions().stereo_folder,
+                "patch-match.cfg"));
 
   std::vector<std::map<int, int>> shared_num_points;
   std::vector<std::map<int, float>> triangulation_angles;
@@ -290,38 +256,55 @@ void PatchMatchController::ReadProblems() {
   const float min_triangulation_angle_rad =
       DegToRad(options_.min_triangulation_angle);
 
-  std::string line;
   std::string ref_image_name;
-  while (std::getline(file, line)) {
-    StringTrim(&line);
+  std::unordered_set<int> ref_image_ids;
 
-    if (line.empty() || line[0] == '#') {
+  struct ProblemConfig {
+    std::string ref_image_name;
+    std::vector<std::string> src_image_names;
+  };
+  std::vector<ProblemConfig> problem_configs;
+
+  for (size_t i = 0; i < config.size(); ++i) {
+    std::string& config_line = config[i];
+    StringTrim(&config_line);
+
+    if (config_line.empty() || config_line[0] == '#') {
       continue;
     }
 
     if (ref_image_name.empty()) {
-      ref_image_name = line;
+      ref_image_name = config_line;
       continue;
     }
 
+    ref_image_ids.insert(model.GetImageId(ref_image_name));
+
+    ProblemConfig problem_config;
+    problem_config.ref_image_name = ref_image_name;
+    problem_config.src_image_names = CSVToVector<std::string>(config_line);
+    problem_configs.push_back(problem_config);
+
+    ref_image_name.clear();
+  }
+
+  for (const auto& problem_config : problem_configs) {
     PatchMatch::Problem problem;
 
-    problem.ref_image_id = model.GetImageId(ref_image_name);
+    problem.ref_image_id = model.GetImageId(problem_config.ref_image_name);
 
-    const std::vector<std::string> src_image_names =
-        CSVToVector<std::string>(line);
-
-    if (src_image_names.size() == 1 && src_image_names[0] == "__all__") {
+    if (problem_config.src_image_names.size() == 1 &&
+        problem_config.src_image_names[0] == "__all__") {
       // Use all images as source images.
       problem.src_image_ids.clear();
       problem.src_image_ids.reserve(model.images.size() - 1);
-      for (size_t image_id = 0; image_id < model.images.size(); ++image_id) {
-        if (static_cast<int>(image_id) != problem.ref_image_id) {
+      for (const int image_id : ref_image_ids) {
+        if (image_id != problem.ref_image_id) {
           problem.src_image_ids.push_back(image_id);
         }
       }
-    } else if (src_image_names.size() == 2 &&
-               src_image_names[0] == "__auto__") {
+    } else if (problem_config.src_image_names.size() == 2 &&
+               problem_config.src_image_names[0] == "__auto__") {
       // Use maximum number of overlapping images as source images. Overlapping
       // will be sorted based on the number of shared points to the reference
       // image and the top ranked images are selected. Note that images are only
@@ -337,50 +320,41 @@ void PatchMatchController::ReadProblems() {
       }
 
       const size_t max_num_src_images =
-          boost::lexical_cast<int>(src_image_names[1]);
+          std::stoll(problem_config.src_image_names[1]);
 
       const auto& overlapping_images =
           shared_num_points.at(problem.ref_image_id);
       const auto& overlapping_triangulation_angles =
           triangulation_angles.at(problem.ref_image_id);
 
-      if (max_num_src_images >= overlapping_images.size()) {
-        problem.src_image_ids.reserve(overlapping_images.size());
-        for (const auto& image : overlapping_images) {
-          if (overlapping_triangulation_angles.at(image.first) >=
-              min_triangulation_angle_rad) {
-            problem.src_image_ids.push_back(image.first);
-          }
-        }
-      } else {
-        std::vector<std::pair<int, int>> src_images;
-        src_images.reserve(overlapping_images.size());
-        for (const auto& image : overlapping_images) {
-          if (overlapping_triangulation_angles.at(image.first) >=
-              min_triangulation_angle_rad) {
-            src_images.emplace_back(image.first, image.second);
-          }
-        }
-
-        const size_t eff_max_num_src_images =
-            std::min(src_images.size(), max_num_src_images);
-
-        std::partial_sort(src_images.begin(),
-                          src_images.begin() + eff_max_num_src_images,
-                          src_images.end(),
-                          [](const std::pair<int, int> image1,
-                             const std::pair<int, int> image2) {
-                            return image1.second > image2.second;
-                          });
-
-        problem.src_image_ids.reserve(eff_max_num_src_images);
-        for (size_t i = 0; i < eff_max_num_src_images; ++i) {
-          problem.src_image_ids.push_back(src_images[i].first);
+      std::vector<std::pair<int, int>> src_images;
+      src_images.reserve(overlapping_images.size());
+      for (const auto& image : overlapping_images) {
+        if (ref_image_ids.count(image.first) &&
+            overlapping_triangulation_angles.at(image.first) >=
+                min_triangulation_angle_rad) {
+          src_images.emplace_back(image.first, image.second);
         }
       }
+
+      const size_t eff_max_num_src_images =
+          std::min(src_images.size(), max_num_src_images);
+
+      std::partial_sort(src_images.begin(),
+                        src_images.begin() + eff_max_num_src_images,
+                        src_images.end(),
+                        [](const std::pair<int, int>& image1,
+                           const std::pair<int, int>& image2) {
+                          return image1.second > image2.second;
+                        });
+
+      problem.src_image_ids.reserve(eff_max_num_src_images);
+      for (size_t i = 0; i < eff_max_num_src_images; ++i) {
+        problem.src_image_ids.push_back(src_images[i].first);
+      }
     } else {
-      problem.src_image_ids.reserve(src_image_names.size());
-      for (const auto& src_image_name : src_image_names) {
+      problem.src_image_ids.reserve(problem_config.src_image_names.size());
+      for (const auto& src_image_name : problem_config.src_image_names) {
         problem.src_image_ids.push_back(model.GetImageId(src_image_name));
       }
     }
@@ -390,14 +364,16 @@ void PatchMatchController::ReadProblems() {
           << StringPrintf(
                  "WARNING: Ignoring reference image %s, because it has no "
                  "source images.",
-                 ref_image_name.c_str())
+                 problem_config.ref_image_name.c_str())
           << std::endl;
     } else {
       problems_.push_back(problem);
     }
-
-    ref_image_name.clear();
   }
+
+  std::cout << StringPrintf("Configuration has %d problems...",
+                            problems_.size())
+            << std::endl;
 }
 
 void PatchMatchController::ReadGpuIndices() {
@@ -416,23 +392,24 @@ void PatchMatchController::ProcessProblem(const PatchMatch::Options& options,
     return;
   }
 
-  const auto model = workspace_->GetModel();
+  const auto& model = workspace_->GetModel();
 
   auto& problem = problems_.at(problem_idx);
   const int gpu_index = gpu_indices_.at(thread_pool_->GetThreadIndex());
   CHECK_GE(gpu_index, -1);
 
+  const std::string& stereo_folder = workspace_->GetOptions().stereo_folder;
   const std::string output_type =
       options.geom_consistency ? "geometric" : "photometric";
   const std::string image_name = model.GetImageName(problem.ref_image_id);
   const std::string file_name =
       StringPrintf("%s.%s.bin", image_name.c_str(), output_type.c_str());
   const std::string depth_map_path =
-      JoinPaths(workspace_path_, "stereo/depth_maps", file_name);
+      JoinPaths(workspace_path_, stereo_folder, "depth_maps", file_name);
   const std::string normal_map_path =
-      JoinPaths(workspace_path_, "stereo/normal_maps", file_name);
-  const std::string consistency_graph_path =
-      JoinPaths(workspace_path_, "stereo/consistency_graphs", file_name);
+      JoinPaths(workspace_path_, stereo_folder, "normal_maps", file_name);
+  const std::string consistency_graph_path = JoinPaths(
+      workspace_path_, stereo_folder, "consistency_graphs", file_name);
 
   if (ExistsFile(depth_map_path) && ExistsFile(normal_map_path) &&
       (!options.write_consistency_graph ||

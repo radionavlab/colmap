@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(TestExtractSiftFeaturesGPU) {
   char* argv[] = {app_name};
   QApplication app(argc, argv);
 
-  if (!OpenGLContextManager::HasMachineDisplay()) {
+  if (!OpenGLContextManager::HasOpenGL()) {
     return;
   }
 
@@ -80,7 +80,7 @@ BOOST_AUTO_TEST_CASE(TestExtractSiftFeaturesGPU) {
 
       SiftGPU sift_gpu;
       BOOST_CHECK(
-          CreateSiftGPUExtractor(SiftExtractionOptions(), -1, &sift_gpu));
+          CreateSiftGPUExtractor(SiftExtractionOptions(), &sift_gpu));
 
       FeatureKeypoints keypoints;
       FeatureDescriptors descriptors;

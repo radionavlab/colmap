@@ -18,13 +18,15 @@ For convenience, the pre-built binaries for Windows contain both the graphical
 and command-line interface executables. To start the COLMAP GUI, you can simply
 run the ``COLMAP.bat`` batch script. The command-line executables are located in
 the ``bin`` folder and can be run from the Windows command shell ``cmd.exe``.
+Note that you must set the relative path to the pre-built libraries in the
+``lib`` directory accordingly using the command ``set PATH=%CD%\lib;%PATH%``.
 
 
 Mac
 ---
 
-The pre-built binaries for Mac only contains the GUI version of COLMAP, since it
-is very easy to compile COLMAP yourself. COLMAP is shipped as an unsigned
+The pre-built binaries for Mac only contain the GUI version of COLMAP, since it
+is very easy to compile COLMAP on Mac. COLMAP is shipped as an unsigned
 application, i.e., you have to right-click the application and select *Open*
 and then accept to trust the application. In the future, you can then simply
 double-click the application to open COLMAP.
@@ -40,8 +42,13 @@ First, checkout the latest source code::
     git clone https://github.com/colmap/colmap
 
 The latest stable version lives in the ``master`` branch and the latest
-development version lives in the ``dev`` branch. Next, follow the build
-instructions for your platform as detailed below.
+development version lives in the ``dev`` branch.
+
+On Linux and Mac it is generally recommended to follow the installation
+instructions below, which use the system package managers to install the
+required dependencies. Alternatively, there is a Python build script that builds
+COLMAP and its dependencies locally. This script is useful under Windows and on
+a (cluster) system if you do not have root access under Linux or Mac.
 
 
 Linux
@@ -61,7 +68,8 @@ Dependencies from default Ubuntu 14.04/16.04 repositories::
         libgoogle-glog-dev \
         libgflags-dev \
         libglew-dev \
-        qt5-default
+        qtbase5-dev \
+        libqt5opengl5-dev
 
 Install `Ceres Solver <http://ceres-solver.org/>`_::
 
@@ -122,12 +130,43 @@ Configure and compile COLMAP::
 Windows
 -------
 
-On Windows you have to install the above dependencies manually. To make the
-process of configuring CMake less painful, please have a look at
+*Recommended dependencies:* CUDA.
+
+On Windows it is recommended to use the Python build script. Please follow the
+instructions in the next section.
+
+Alternatively, you can install the dependencies manually. To make the process of
+configuring CMake less painful, please have a look at
 ``LocalConfigExample.config``. MSVC12 (Microsoft Visual Studio 2013) and newer
 are confirmed to compile COLMAP without any issues.
 
-*Recommended dependencies:* CUDA.
+
+Build Script
+------------
+
+COLMAP ships with an automated Python build script. The build script installs
+COLMAP and its dependencies locally under Windows, Mac, and Linux. Note that
+under Mac and Linux, it is usually easier and faster to use the available
+package managers for the dependencies (see above). However, if you are on a
+(cluster) system without root access, this script might be useful. This script
+downloads the necessary dependencies automatically from the Internet. It assumes
+that CMake, Boost, Qt5, and CUDA (optional) are already installed on the system.
+E.g., under Windows you must specify the location of these libraries as
+follows::
+
+    python scripts/python/build.py \
+        --path path/to/colmap/install \
+        --boost_path C:\local\boost_1_64_0\lib64-msvc-14.0 \
+        --qt_path C:\Qt\5.9.1\msvc2015_64 \
+        --cuda_path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA/v8.0"
+
+If you use Homebrew under Mac, you can use the following command::
+
+    python scripts/python/build.py \
+        --path path/to/colmap/install \
+        --qt5_path /usr/local/opt/qt/
+
+To see the full list of command-line options, pass the ``--help`` argument.
 
 
 -------------

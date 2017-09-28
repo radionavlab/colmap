@@ -81,6 +81,13 @@ bool Bitmap::Allocate(const int width, const int height, const bool as_rgb) {
   return data != nullptr;
 }
 
+void Bitmap::Deallocate() {
+  data_.reset();
+  width_ = 0;
+  height_ = 0;
+  channels_ = 0;
+}
+
 size_t Bitmap::NumBytes() const {
   if (data_) {
     return ScanWidth() * height_;
@@ -272,7 +279,7 @@ bool Bitmap::ExifFocalLength(double* focal_length) {
     const boost::regex regex(".*?([0-9.]+).*?mm.*?");
     boost::cmatch result;
     if (boost::regex_search(focal_length_35mm_str.c_str(), result, regex)) {
-      const double focal_length_35 = boost::lexical_cast<double>(result[1]);
+      const double focal_length_35 = std::stod(result[1]);
       if (focal_length_35 > 0) {
         *focal_length = focal_length_35 / 35.0 * max_size;
         return true;
@@ -289,7 +296,7 @@ bool Bitmap::ExifFocalLength(double* focal_length) {
     boost::regex regex(".*?([0-9.]+).*?mm");
     boost::cmatch result;
     if (boost::regex_search(focal_length_str.c_str(), result, regex)) {
-      const double focal_length_mm = boost::lexical_cast<double>(result[1]);
+      const double focal_length_mm = std::stod(result[1]);
 
       // Lookup sensor width in database.
       std::string make_str;
@@ -314,11 +321,10 @@ bool Bitmap::ExifFocalLength(double* focal_length) {
                       &res_unit_str)) {
         regex = boost::regex(".*?([0-9.]+).*?");
         if (boost::regex_search(pixel_x_dim_str.c_str(), result, regex)) {
-          const double pixel_x_dim = boost::lexical_cast<double>(result[1]);
+          const double pixel_x_dim = std::stod(result[1]);
           regex = boost::regex(".*?([0-9.]+).*?/.*?([0-9.]+).*?");
           if (boost::regex_search(x_res_str.c_str(), result, regex)) {
-            const double x_res = boost::lexical_cast<double>(result[2]) /
-                                 boost::lexical_cast<double>(result[1]);
+            const double x_res = std::stod(result[2]) / std::stod(result[1]);
             // Use PixelXDimension instead of actual width of image, since
             // the image might have been resized, but the EXIF data preserved.
             const double ccd_width = x_res * pixel_x_dim;
@@ -346,9 +352,9 @@ bool Bitmap::ExifLatitude(double* latitude) {
     const boost::regex regex(".*?([0-9.]+):([0-9.]+):([0-9.]+).*?");
     boost::cmatch result;
     if (boost::regex_search(str.c_str(), result, regex)) {
-      const double hours = boost::lexical_cast<double>(result[1]);
-      const double minutes = boost::lexical_cast<double>(result[2]);
-      const double seconds = boost::lexical_cast<double>(result[3]);
+      const double hours = std::stod(result[1]);
+      const double minutes = std::stod(result[2]);
+      const double seconds = std::stod(result[3]);
       *latitude = hours + minutes / 60.0 + seconds / 3600.0;
       return true;
     }
@@ -362,9 +368,9 @@ bool Bitmap::ExifLongitude(double* longitude) {
     const boost::regex regex(".*?([0-9.]+):([0-9.]+):([0-9.]+).*?");
     boost::cmatch result;
     if (boost::regex_search(str.c_str(), result, regex)) {
-      const double hours = boost::lexical_cast<double>(result[1]);
-      const double minutes = boost::lexical_cast<double>(result[2]);
-      const double seconds = boost::lexical_cast<double>(result[3]);
+      const double hours = std::stod(result[1]);
+      const double minutes = std::stod(result[2]);
+      const double seconds = std::stod(result[3]);
       *longitude = hours + minutes / 60.0 + seconds / 3600.0;
       return true;
     }
@@ -378,8 +384,7 @@ bool Bitmap::ExifAltitude(double* altitude) {
     const boost::regex regex(".*?([0-9.]+).*?/.*?([0-9.]+).*?");
     boost::cmatch result;
     if (boost::regex_search(str.c_str(), result, regex)) {
-      *altitude = boost::lexical_cast<double>(result[1]) /
-                  boost::lexical_cast<double>(result[2]);
+      *altitude = std::stod(result[1]) / std::stod(result[2]);
       return true;
     }
   }
@@ -527,19 +532,15 @@ bool Bitmap::ReadExifTag(const FREE_IMAGE_MDMODEL model,
 }
 
 void Bitmap::SetPtr(FIBITMAP* data) {
-  CHECK(IsPtrSupported(data));
+  if (!IsPtrSupported(data)) {
+    FreeImage_Unload(data);
+    data = FreeImage_ConvertTo24Bits(data);
+  }
 
   data_ = FIBitmapPtr(data, &FreeImage_Unload);
   width_ = FreeImage_GetWidth(data);
   height_ = FreeImage_GetHeight(data);
-
-  if (!IsPtrGrey(data) && !IsPtrRGB(data)) {
-    FIBITMAP* data_converted = FreeImage_ConvertTo24Bits(data);
-    data_ = FIBitmapPtr(data_converted, &FreeImage_Unload);
-    channels_ = 3;
-  } else {
-    channels_ = IsPtrRGB(data) ? 3 : 1;
-  }
+  channels_ = IsPtrRGB(data) ? 3 : 1;
 }
 
 bool Bitmap::IsPtrGrey(FIBITMAP* data) {

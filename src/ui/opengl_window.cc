@@ -166,6 +166,8 @@ OpenGLWindow::OpenGLWindow(QWidget* parent, OptionManager* options,
       selected_point3D_id_(kInvalidPoint3DId),
       coordinate_grid_enabled_(true),
       near_plane_(kInitNearPlane) {
+  setFlags(Qt::Widget);
+
   bg_color_[0] = 1.0f;
   bg_color_[1] = 1.0f;
   bg_color_[2] = 1.0f;
@@ -177,6 +179,115 @@ OpenGLWindow::OpenGLWindow(QWidget* parent, OptionManager* options,
 
   image_size_ = static_cast<float>(devicePixelRatio() * image_size_);
   point_size_ = static_cast<float>(devicePixelRatio() * point_size_);
+}
+
+void OpenGLWindow::SetupGL() {
+  setSurfaceType(OpenGLSurface);
+
+  QSurfaceFormat format;
+  format.setDepthBufferSize(24);
+  format.setMajorVersion(3);
+  format.setMinorVersion(2);
+  format.setSamples(4);
+  format.setProfile(QSurfaceFormat::CoreProfile);
+#ifdef DEBUG
+  format.setOption(QSurfaceFormat::DebugContext);
+#endif
+
+  setFormat(format);
+  create();
+
+  // Create an OpenGL context
+  context_ = new QOpenGLContext(this);
+  context_->setFormat(format);
+  CHECK(context_->create());
+
+  InitializeGL();
+  InitializePainters();
+
+  connect(this, &QWindow::widthChanged, this, &OpenGLWindow::ResizeGL);
+  connect(this, &QWindow::heightChanged, this, &OpenGLWindow::ResizeGL);
+
+#ifdef DEBUG
+  std::cout << "Selected OpenGL version: " << format.majorVersion() << "."
+            << format.minorVersion() << std::endl;
+  std::cout << "Context validity: " << context_->isValid() << std::endl;
+  std::cout << "Used OpenGL version: " << context_->format().majorVersion()
+            << "." << context_->format().minorVersion() << std::endl;
+  std::cout << "OpenGL information: VENDOR:       "
+            << (const char*)glGetString(GL_VENDOR) << std::endl;
+  std::cout << "                    RENDERDER:    "
+            << (const char*)glGetString(GL_RENDERER) << std::endl;
+  std::cout << "                    VERSION:      "
+            << (const char*)glGetString(GL_VERSION) << std::endl;
+  std::cout << "                    GLSL VERSION: "
+            << (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
+  std::cout << std::endl;
+
+  auto extensions = context_->extensions().toList();
+  qSort(extensions);
+  std::cout << "Supported extensions (" << extensions.count()
+            << "):" << std::endl;
+  foreach (const QByteArray& extension, extensions)
+    std::cout << "    " << extension.data() << std::endl;
+#endif
+}
+
+void OpenGLWindow::InitializeGL() {
+  context_->makeCurrent(this);
+  InitializeSettings();
+  InitializeView();
+}
+
+void OpenGLWindow::PaintGL() {
+  if (!isExposed()) {
+    return;
+  }
+
+  context_->makeCurrent(this);
+
+  glClearColor(bg_color_[0], bg_color_[1], bg_color_[2], 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  const QMatrix4x4 pmv_matrix = projection_matrix_ * model_view_matrix_;
+
+  // Model view matrix for center of view
+  QMatrix4x4 model_view_center_matrix = model_view_matrix_;
+  const Eigen::Vector4f rot_center =
+      QMatrixToEigen(model_view_matrix_).inverse() *
+      Eigen::Vector4f(0, 0, -focus_distance_, 1);
+  model_view_center_matrix.translate(rot_center(0), rot_center(1),
+                                     rot_center(2));
+  const QMatrix4x4 pmvc_matrix = projection_matrix_ * model_view_center_matrix;
+
+  // Coordinate system
+  if (coordinate_grid_enabled_) {
+    coordinate_axes_painter_.Render(pmv_matrix, width(), height(), 2);
+    coordinate_grid_painter_.Render(pmvc_matrix, width(), height(), 1);
+  }
+
+  // Point cloud
+  point_painter_.Render(pmv_matrix, point_size_);
+  point_connection_painter_.Render(pmv_matrix, width(), height(), 1);
+
+  // Images
+  image_line_painter_.Render(pmv_matrix, width(), height(), 1);
+  image_triangle_painter_.Render(pmv_matrix);
+  image_connection_painter_.Render(pmv_matrix, width(), height(), 1);
+
+  // Movie grabber cameras
+  movie_grabber_path_painter_.Render(pmv_matrix, width(), height(), 1.5);
+  movie_grabber_line_painter_.Render(pmv_matrix, width(), height(), 1);
+  movie_grabber_triangle_painter_.Render(pmv_matrix);
+
+  context_->swapBuffers(this);
+}
+
+void OpenGLWindow::ResizeGL() {
+  context_->makeCurrent(this);
+  glViewport(0, 0, width(), height());
+  ComposeProjectionMatrix();
+  UploadCoordinateGridData();
 }
 
 void OpenGLWindow::Update() {
@@ -347,7 +458,7 @@ void OpenGLWindow::TranslateView(const float x, const float y,
   PaintGL();
 }
 
-void OpenGLWindow::ChangeImageSize(const float delta) {
+void OpenGLWindow::ChangeCameraSize(const float delta) {
   if (delta == 0.0f) {
     return;
   }
@@ -481,7 +592,10 @@ void OpenGLWindow::SetBackgroundColor(const float r, const float g,
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLWindow::exposeEvent(QExposeEvent*) { PaintGL(); }
+void OpenGLWindow::exposeEvent(QExposeEvent* event) {
+  PaintGL();
+  event->accept();
+}
 
 void OpenGLWindow::mousePressEvent(QMouseEvent* event) {
   if (mouse_press_timer_.isActive()) {  // Select objects (2. click)
@@ -523,7 +637,7 @@ void OpenGLWindow::wheelEvent(QWheelEvent* event) {
   if (event->modifiers() & Qt::ControlModifier) {
     ChangePointSize(event->delta());
   } else if (event->modifiers() & Qt::AltModifier) {
-    ChangeImageSize(event->delta());
+    ChangeCameraSize(event->delta());
   } else if (event->modifiers() & Qt::ShiftModifier) {
     ChangeNearPlane(event->delta());
   } else {
@@ -532,60 +646,7 @@ void OpenGLWindow::wheelEvent(QWheelEvent* event) {
   event->accept();
 }
 
-void OpenGLWindow::SetupGL() {
-  setSurfaceType(OpenGLSurface);
-
-  QSurfaceFormat format;
-  format.setDepthBufferSize(24);
-  format.setMajorVersion(3);
-  format.setMinorVersion(2);
-  format.setSamples(4);
-  format.setProfile(QSurfaceFormat::CoreProfile);
-#ifdef DEBUG
-  format.setOption(QSurfaceFormat::DebugContext);
-#endif
-
-  setFormat(format);
-  create();
-
-  // Create an OpenGL context
-  context_ = new QOpenGLContext(this);
-  context_->setFormat(format);
-  CHECK(context_->create());
-
-  InitializeGL();
-
-  connect(this, &QWindow::widthChanged, this, &OpenGLWindow::ResizeGL);
-  connect(this, &QWindow::heightChanged, this, &OpenGLWindow::ResizeGL);
-
-  SetupPainters();
-
-#ifdef DEBUG
-  std::cout << "Selected OpenGL version: " << format.majorVersion() << "."
-            << format.minorVersion() << std::endl;
-  std::cout << "Context validity: " << context_->isValid() << std::endl;
-  std::cout << "Used OpenGL version: " << context_->format().majorVersion()
-            << "." << context_->format().minorVersion() << std::endl;
-  std::cout << "OpenGL information: VENDOR:       "
-            << (const char*)glGetString(GL_VENDOR) << std::endl;
-  std::cout << "                    RENDERDER:    "
-            << (const char*)glGetString(GL_RENDERER) << std::endl;
-  std::cout << "                    VERSION:      "
-            << (const char*)glGetString(GL_VERSION) << std::endl;
-  std::cout << "                    GLSL VERSION: "
-            << (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
-  std::cout << std::endl;
-
-  auto extensions = context_->extensions().toList();
-  qSort(extensions);
-  std::cout << "Supported extensions (" << extensions.count()
-            << "):" << std::endl;
-  foreach (const QByteArray& extension, extensions)
-    std::cout << "    " << extension.data() << std::endl;
-#endif
-}
-
-void OpenGLWindow::SetupPainters() {
+void OpenGLWindow::InitializePainters() {
   coordinate_axes_painter_.Setup();
   coordinate_grid_painter_.Setup();
 
@@ -599,59 +660,6 @@ void OpenGLWindow::SetupPainters() {
   movie_grabber_path_painter_.Setup();
   movie_grabber_line_painter_.Setup();
   movie_grabber_triangle_painter_.Setup();
-}
-
-void OpenGLWindow::InitializeGL() {
-  context_->makeCurrent(this);
-  InitializeSettings();
-  InitializeView();
-}
-
-void OpenGLWindow::PaintGL() {
-  context_->makeCurrent(this);
-
-  glClearColor(bg_color_[0], bg_color_[1], bg_color_[2], 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-  const QMatrix4x4 pmv_matrix = projection_matrix_ * model_view_matrix_;
-
-  // Model view matrix for center of view
-  QMatrix4x4 model_view_center_matrix = model_view_matrix_;
-  const Eigen::Vector4f rot_center =
-      QMatrixToEigen(model_view_matrix_).inverse() *
-      Eigen::Vector4f(0, 0, -focus_distance_, 1);
-  model_view_center_matrix.translate(rot_center(0), rot_center(1),
-                                     rot_center(2));
-  const QMatrix4x4 pmvc_matrix = projection_matrix_ * model_view_center_matrix;
-
-  // Coordinate system
-  if (coordinate_grid_enabled_) {
-    coordinate_axes_painter_.Render(pmv_matrix, width(), height(), 2);
-    coordinate_grid_painter_.Render(pmvc_matrix, width(), height(), 1);
-  }
-
-  // Point cloud
-  point_painter_.Render(pmv_matrix, point_size_);
-  point_connection_painter_.Render(pmv_matrix, width(), height(), 1);
-
-  // Images
-  image_line_painter_.Render(pmv_matrix, width(), height(), 1);
-  image_triangle_painter_.Render(pmv_matrix);
-  image_connection_painter_.Render(pmv_matrix, width(), height(), 1);
-
-  // Movie grabber cameras
-  movie_grabber_path_painter_.Render(pmv_matrix, width(), height(), 1.5);
-  movie_grabber_line_painter_.Render(pmv_matrix, width(), height(), 1);
-  movie_grabber_triangle_painter_.Render(pmv_matrix);
-
-  context_->swapBuffers(this);
-}
-
-void OpenGLWindow::ResizeGL() {
-  context_->makeCurrent(this);
-  glViewport(0, 0, width(), height());
-  ComposeProjectionMatrix();
-  UploadCoordinateGridData();
 }
 
 void OpenGLWindow::InitializeSettings() {
