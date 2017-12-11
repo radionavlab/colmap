@@ -232,7 +232,7 @@ void MatchesWidget::ShowMatches(const std::vector<Image>& images,
   inlier_matches_tab_->Reload(images, image_id);
 }
 
-void MatchesWidget::closeEvent(QCloseEvent* event) {
+void MatchesWidget::closeEvent(QCloseEvent*) {
   raw_matches_tab_->Clear();
   inlier_matches_tab_->Clear();
   parent_->setEnabled(true);
@@ -699,10 +699,8 @@ void ImageTab::SplitCamera() {
 
   for (QModelIndex& index : select->selectedRows()) {
     auto& image = images_[index.row()];
-    if (image.CameraId() != camera_id) {
-      image.SetCameraId(database_->WriteCamera(camera));
-      database_->UpdateImage(image);
-    }
+    image.SetCameraId(database_->WriteCamera(camera));
+    database_->UpdateImage(image);
     table_widget_->setItem(
         index.row(), 2,
         new QTableWidgetItem(QString::number(image.CameraId())));
@@ -747,7 +745,7 @@ DatabaseManagementWidget::DatabaseManagementWidget(QWidget* parent,
   grid->setColumnStretch(1, 1);
 }
 
-void DatabaseManagementWidget::showEvent(QShowEvent* event) {
+void DatabaseManagementWidget::showEvent(QShowEvent*) {
   parent_->setDisabled(true);
 
   database_.Open(*options_->database_path);
@@ -756,7 +754,7 @@ void DatabaseManagementWidget::showEvent(QShowEvent* event) {
   camera_tab_->Reload();
 }
 
-void DatabaseManagementWidget::hideEvent(QHideEvent* event) {
+void DatabaseManagementWidget::hideEvent(QHideEvent*) {
   parent_->setEnabled(true);
 
   image_tab_->Clear();

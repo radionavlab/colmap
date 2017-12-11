@@ -16,11 +16,12 @@
 
 #include "controllers/automatic_reconstruction.h"
 
-#include "base/feature_extraction.h"
-#include "base/feature_matching.h"
 #include "base/undistortion.h"
 #include "controllers/incremental_mapper.h"
+#include "feature/extraction.h"
+#include "feature/matching.h"
 #include "mvs/fusion.h"
+#include "mvs/meshing.h"
 #include "mvs/patch_match.h"
 #include "util/misc.h"
 #include "util/option_manager.h"
@@ -51,6 +52,8 @@ AutomaticReconstructionController::AutomaticReconstructionController(
   } else {
     LOG(FATAL) << "Data type not supported";
   }
+
+  CHECK(ExistsCameraModelWithName(options_.camera_model));
 
   if (options_.quality == Quality::LOW) {
     option_manager_.sift_extraction->max_image_size = 1000;
@@ -91,10 +94,11 @@ AutomaticReconstructionController::AutomaticReconstructionController(
   option_manager_.mapper->num_threads = options_.num_threads;
   option_manager_.dense_meshing->num_threads = options_.num_threads;
 
-  ImageReader::Options reader_options = *option_manager_.image_reader;
+  ImageReaderOptions reader_options = *option_manager_.image_reader;
   reader_options.database_path = *option_manager_.database_path;
   reader_options.image_path = *option_manager_.image_path;
   reader_options.single_camera = options_.single_camera;
+  reader_options.camera_model = options_.camera_model;
 
   option_manager_.sift_extraction->use_gpu = options_.use_gpu;
   option_manager_.sift_matching->use_gpu = options_.use_gpu;
@@ -104,7 +108,7 @@ AutomaticReconstructionController::AutomaticReconstructionController(
   option_manager_.dense_stereo->gpu_index = options_.gpu_index;
 
   feature_extractor_.reset(new SiftFeatureExtractor(
-        reader_options, *option_manager_.sift_extraction));
+      reader_options, *option_manager_.sift_extraction));
 
   exhaustive_matcher_.reset(new ExhaustiveFeatureMatcher(
       *option_manager_.exhaustive_matching, *option_manager_.sift_matching,
@@ -293,8 +297,12 @@ void AutomaticReconstructionController::RunDenseMapper() {
     // Dense fusion
 
     if (!ExistsFile(fused_path)) {
+      auto fusion_options = *option_manager_.dense_fusion;
+      const int num_reg_images = reconstruction_manager_->Get(i).NumRegImages();
+      fusion_options.min_num_pixels =
+          std::min(num_reg_images + 1, fusion_options.min_num_pixels);
       mvs::StereoFusion fuser(
-          *option_manager_.dense_fusion, dense_path, "COLMAP", "",
+          fusion_options, dense_path, "COLMAP", "",
           options_.quality == Quality::HIGH ? "geometric" : "photometric");
       active_thread_ = &fuser;
       fuser.Start();

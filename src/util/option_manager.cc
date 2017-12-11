@@ -19,6 +19,16 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 
+#include "base/image_reader.h"
+#include "controllers/incremental_mapper.h"
+#include "feature/extraction.h"
+#include "feature/matching.h"
+#include "feature/sift.h"
+#include "mvs/fusion.h"
+#include "mvs/meshing.h"
+#include "mvs/patch_match.h"
+#include "optim/bundle_adjustment.h"
+#include "ui/render_options.h"
 #include "util/misc.h"
 #include "util/version.h"
 
@@ -31,18 +41,18 @@ OptionManager::OptionManager() {
   database_path.reset(new std::string());
   image_path.reset(new std::string());
 
-  image_reader.reset(new ImageReader::Options());
+  image_reader.reset(new ImageReaderOptions());
   sift_extraction.reset(new SiftExtractionOptions());
   sift_matching.reset(new SiftMatchingOptions());
-  exhaustive_matching.reset(new ExhaustiveFeatureMatcher::Options());
-  sequential_matching.reset(new SequentialFeatureMatcher::Options());
-  vocab_tree_matching.reset(new VocabTreeFeatureMatcher::Options());
-  spatial_matching.reset(new SpatialFeatureMatcher::Options());
-  transitive_matching.reset(new TransitiveFeatureMatcher::Options());
-  bundle_adjustment.reset(new BundleAdjuster::Options());
-  mapper.reset(new IncrementalMapperController::Options());
-  dense_stereo.reset(new mvs::PatchMatch::Options());
-  dense_fusion.reset(new mvs::StereoFusion::Options());
+  exhaustive_matching.reset(new ExhaustiveMatchingOptions());
+  sequential_matching.reset(new SequentialMatchingOptions());
+  vocab_tree_matching.reset(new VocabTreeMatchingOptions());
+  spatial_matching.reset(new SpatialMatchingOptions());
+  transitive_matching.reset(new TransitiveMatchingOptions());
+  bundle_adjustment.reset(new BundleAdjustmentOptions());
+  mapper.reset(new IncrementalMapperOptions());
+  dense_stereo.reset(new mvs::PatchMatchOptions());
+  dense_fusion.reset(new mvs::StereoFusionOptions());
   dense_meshing.reset(new mvs::PoissonReconstructionOptions());
   render.reset(new RenderOptions());
 
@@ -148,10 +158,20 @@ void OptionManager::AddExtractionOptions() {
                               &sift_extraction->peak_threshold);
   AddAndRegisterDefaultOption("SiftExtraction.edge_threshold",
                               &sift_extraction->edge_threshold);
+  AddAndRegisterDefaultOption("SiftExtraction.estimate_affine_shape",
+                              &sift_extraction->estimate_affine_shape);
   AddAndRegisterDefaultOption("SiftExtraction.max_num_orientations",
                               &sift_extraction->max_num_orientations);
   AddAndRegisterDefaultOption("SiftExtraction.upright",
                               &sift_extraction->upright);
+  AddAndRegisterDefaultOption("SiftExtraction.domain_size_pooling",
+                              &sift_extraction->domain_size_pooling);
+  AddAndRegisterDefaultOption("SiftExtraction.dsp_min_scale",
+                              &sift_extraction->dsp_min_scale);
+  AddAndRegisterDefaultOption("SiftExtraction.dsp_max_scale",
+                              &sift_extraction->dsp_max_scale);
+  AddAndRegisterDefaultOption("SiftExtraction.dsp_num_scales",
+                              &sift_extraction->dsp_num_scales);
 }
 
 void OptionManager::AddMatchingOptions() {
@@ -536,18 +556,18 @@ void OptionManager::Reset() {
   *database_path = "";
   *image_path = "";
 
-  *image_reader = ImageReader::Options();
+  *image_reader = ImageReaderOptions();
   *sift_extraction = SiftExtractionOptions();
   *sift_matching = SiftMatchingOptions();
-  *exhaustive_matching = ExhaustiveFeatureMatcher::Options();
-  *sequential_matching = SequentialFeatureMatcher::Options();
-  *vocab_tree_matching = VocabTreeFeatureMatcher::Options();
-  *spatial_matching = SpatialFeatureMatcher::Options();
-  *transitive_matching = TransitiveFeatureMatcher::Options();
-  *bundle_adjustment = BundleAdjuster::Options();
-  *mapper = IncrementalMapperController::Options();
-  *dense_stereo = mvs::PatchMatch::Options();
-  *dense_fusion = mvs::StereoFusion::Options();
+  *exhaustive_matching = ExhaustiveMatchingOptions();
+  *sequential_matching = SequentialMatchingOptions();
+  *vocab_tree_matching = VocabTreeMatchingOptions();
+  *spatial_matching = SpatialMatchingOptions();
+  *transitive_matching = TransitiveMatchingOptions();
+  *bundle_adjustment = BundleAdjustmentOptions();
+  *mapper = IncrementalMapperOptions();
+  *dense_stereo = mvs::PatchMatchOptions();
+  *dense_fusion = mvs::StereoFusionOptions();
   *dense_meshing = mvs::PoissonReconstructionOptions();
   *render = RenderOptions();
 

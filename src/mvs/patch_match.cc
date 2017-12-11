@@ -30,13 +30,13 @@
 namespace colmap {
 namespace mvs {
 
-PatchMatch::PatchMatch(const Options& options, const Problem& problem)
+PatchMatch::PatchMatch(const PatchMatchOptions& options, const Problem& problem)
     : options_(options), problem_(problem) {}
 
 PatchMatch::~PatchMatch() {}
 
-void PatchMatch::Options::Print() const {
-  PrintHeading2("PatchMatch::Options");
+void PatchMatchOptions::Print() const {
+  PrintHeading2("PatchMatchOptions");
   PrintOption(max_image_size);
   PrintOption(gpu_index);
   PrintOption(depth_min);
@@ -164,7 +164,7 @@ ConsistencyGraph PatchMatch::GetConsistencyGraph() const {
                           patch_match_cuda_->GetConsistentImageIds());
 }
 
-PatchMatchController::PatchMatchController(const PatchMatch::Options& options,
+PatchMatchController::PatchMatchController(const PatchMatchOptions& options,
                                            const std::string& workspace_path,
                                            const std::string& workspace_format,
                                            const std::string& pmvs_option_name)
@@ -386,7 +386,7 @@ void PatchMatchController::ReadGpuIndices() {
   }
 }
 
-void PatchMatchController::ProcessProblem(const PatchMatch::Options& options,
+void PatchMatchController::ProcessProblem(const PatchMatchOptions& options,
                                           const size_t problem_idx) {
   if (IsStopped()) {
     return;
@@ -420,6 +420,11 @@ void PatchMatchController::ProcessProblem(const PatchMatch::Options& options,
   PrintHeading1(StringPrintf("Processing view %d / %d", problem_idx + 1,
                              problems_.size()));
 
+  auto patch_match_options = options;
+  patch_match_options.depth_min = depth_ranges_.at(problem.ref_image_id).first;
+  patch_match_options.depth_max = depth_ranges_.at(problem.ref_image_id).second;
+  patch_match_options.gpu_index = std::to_string(gpu_index);
+
   std::vector<Image> images = model.images;
   std::vector<DepthMap> depth_maps;
   std::vector<NormalMap> normal_maps;
@@ -438,6 +443,10 @@ void PatchMatchController::ProcessProblem(const PatchMatch::Options& options,
                                            problem.src_image_ids.end());
     used_image_ids.insert(problem.ref_image_id);
 
+    patch_match_options.filter_min_num_consistent =
+        std::min(static_cast<int>(used_image_ids.size()) - 1,
+                 patch_match_options.filter_min_num_consistent);
+
     // Only access workspace from one thread at a time and only spawn resample
     // threads from one master thread at a time.
     std::unique_lock<std::mutex> lock(workspace_mutex_);
@@ -453,11 +462,6 @@ void PatchMatchController::ProcessProblem(const PatchMatch::Options& options,
   }
 
   problem.Print();
-
-  auto patch_match_options = options;
-  patch_match_options.depth_min = depth_ranges_.at(problem.ref_image_id).first;
-  patch_match_options.depth_max = depth_ranges_.at(problem.ref_image_id).second;
-  patch_match_options.gpu_index = std::to_string(gpu_index);
   patch_match_options.Print();
 
   PatchMatch patch_match(patch_match_options, problem);

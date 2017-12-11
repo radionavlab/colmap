@@ -17,7 +17,7 @@
 #include <QApplication>
 
 #include "base/camera_models.h"
-#include "base/feature_extraction.h"
+#include "feature/extraction.h"
 #include "util/logging.h"
 #include "util/misc.h"
 #include "util/option_manager.h"
@@ -42,12 +42,19 @@ int main(int argc, char** argv) {
   options.AddExtractionOptions();
   options.Parse(argc, argv);
 
-  ImageReader::Options reader_options = *options.image_reader;
+  ImageReaderOptions reader_options = *options.image_reader;
   reader_options.database_path = *options.database_path;
   reader_options.image_path = *options.image_path;
 
   if (!image_list_path.empty()) {
     reader_options.image_list = ReadTextFileLines(image_list_path);
+    if (reader_options.image_list.empty()) {
+      return EXIT_SUCCESS;
+    }
+  }
+
+  if (!ExistsCameraModelWithName(options.image_reader->camera_model)) {
+    std::cerr << "ERROR: Camera model does not exist" << std::endl;
   }
 
   const std::vector<double> camera_params =

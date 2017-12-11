@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.11)
 
 project(COLMAP)
 
-set(COLMAP_VERSION "3.2")
+set(COLMAP_VERSION "3.3")
 
 
 ################################################################################
@@ -29,7 +29,7 @@ endif()
 ################################################################################
 
 option(OPENMP_ENABLED "Whether to enable OpenMP" ON)
-option(LTO_ENABLED "Whether to enable link-time optimization" ON)
+option(IPO_ENABLED "Whether to enable interprocedural optimization" ON)
 option(CUDA_ENABLED "Whether to enable CUDA, if available" ON)
 option(OPENGL_ENABLED "Whether to enable OpenGL, if available" ON)
 option(TESTS_ENABLED "Whether to build test binaries" ON)
@@ -90,9 +90,9 @@ find_package(Qt5 REQUIRED)
 if(CMAKE_BUILD_TYPE)
     message(STATUS "Build type specified as ${CMAKE_BUILD_TYPE}")
 else()
-    message(STATUS "Build type not specified, using RelWithDebInfo")
-    set(CMAKE_BUILD_TYPE RelWithDebInfo)
-    set(IS_DEBUG TRUE)
+    message(STATUS "Build type not specified, using Release")
+    set(CMAKE_BUILD_TYPE Release)
+    set(IS_DEBUG FALSE)
 endif()
 
 if(IS_MSVC)
@@ -122,15 +122,11 @@ else()
     message(STATUS "Disabling OpenMP support")
 endif()
 
-if(LTO_ENABLED AND NOT IS_DEBUG AND NOT IS_GNU)
-    CHECK_CXX_COMPILER_FLAG("-flto" HAS_LTO)
-    if(HAS_LTO)
-        message(STATUS "Enabling link-time optimization (-flto)")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
-    endif()
+if(IPO_ENABLED AND NOT IS_DEBUG AND NOT IS_GNU)
+    message(STATUS "Enabling interprocedural optimization")
+    set_property(DIRECTORY PROPERTY INTERPROCEDURAL_OPTIMIZATION 1)
 else()
-    message(STATUS "Disabling link-time optimization (-flto)")
+    message(STATUS "Disabling interprocedural optimization")
 endif()
 
 if(CUDA_FOUND)

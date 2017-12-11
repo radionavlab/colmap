@@ -31,6 +31,49 @@
 
 namespace colmap {
 
+struct BundleAdjustmentOptions {
+  // Loss function types: Trivial (non-robust) and Cauchy (robust) loss.
+  enum class LossFunctionType { TRIVIAL, CAUCHY };
+  LossFunctionType loss_function_type = LossFunctionType::TRIVIAL;
+
+  // Scaling factor determines residual at which robustification takes place.
+  double loss_function_scale = 1.0;
+
+  // Whether to refine the focal length parameter group.
+  bool refine_focal_length = true;
+
+  // Whether to refine the principal point parameter group.
+  bool refine_principal_point = false;
+
+  // Whether to refine the extra parameter group.
+  bool refine_extra_params = true;
+
+  // Whether to print a final summary.
+  bool print_summary = true;
+
+  // Ceres-Solver options.
+  ceres::Solver::Options solver_options;
+
+  BundleAdjustmentOptions() {
+    solver_options.function_tolerance = 0.0;
+    solver_options.gradient_tolerance = 0.0;
+    solver_options.parameter_tolerance = 0.0;
+    solver_options.minimizer_progress_to_stdout = false;
+    solver_options.max_num_iterations = 100;
+    solver_options.max_linear_solver_iterations = 200;
+    solver_options.max_num_consecutive_invalid_steps = 10;
+    solver_options.max_consecutive_nonmonotonic_steps = 10;
+    solver_options.num_threads = -1;
+    solver_options.num_linear_solver_threads = -1;
+  }
+
+  // Create a new loss function based on the specified options. The caller
+  // takes ownership of the loss function.
+  ceres::LossFunction* CreateLossFunction() const;
+
+  bool Check() const;
+};
+
 // Configuration container to setup bundle adjustment problems.
 class BundleAdjustmentConfig {
  public:
@@ -102,55 +145,13 @@ class BundleAdjustmentConfig {
 // and provides best solution quality.
 class BundleAdjuster {
  public:
-  struct Options {
-    // Loss function types: Trivial (non-robust) and Cauchy (robust) loss.
-    enum class LossFunctionType { TRIVIAL, CAUCHY };
-    LossFunctionType loss_function_type = LossFunctionType::TRIVIAL;
-
-    // Scaling factor determines residual at which robustification takes place.
-    double loss_function_scale = 1.0;
-
-    // Whether to refine the focal length parameter group.
-    bool refine_focal_length = true;
-
-    // Whether to refine the principal point parameter group.
-    bool refine_principal_point = false;
-
-    // Whether to refine the extra parameter group.
-    bool refine_extra_params = true;
-
-    // Whether to print a final summary.
-    bool print_summary = true;
-
-    // Ceres-Solver options.
-    ceres::Solver::Options solver_options;
-
-    Options() {
-      solver_options.function_tolerance = 0.0;
-      solver_options.gradient_tolerance = 0.0;
-      solver_options.parameter_tolerance = 0.0;
-      solver_options.minimizer_progress_to_stdout = false;
-      solver_options.max_num_iterations = 100;
-      solver_options.max_linear_solver_iterations = 200;
-      solver_options.max_num_consecutive_invalid_steps = 10;
-      solver_options.max_consecutive_nonmonotonic_steps = 10;
-      solver_options.num_threads = -1;
-      solver_options.num_linear_solver_threads = -1;
-    }
-
-    // Create a new loss function based on the specified options. The caller
-    // takes ownership of the loss function.
-    ceres::LossFunction* CreateLossFunction() const;
-
-    bool Check() const;
-  };
-
-  BundleAdjuster(const Options& options, const BundleAdjustmentConfig& config);
+  BundleAdjuster(const BundleAdjustmentOptions& options,
+                 const BundleAdjustmentConfig& config);
 
   bool Solve(Reconstruction* reconstruction);
 
   // Get the Ceres solver summary for the last call to `Solve`.
-  ceres::Solver::Summary Summary() const;
+  const ceres::Solver::Summary& Summary() const;
 
  private:
   void SetUp(Reconstruction* reconstruction,
@@ -168,12 +169,12 @@ class BundleAdjuster {
   void ParameterizeCameras(Reconstruction* reconstruction);
   void ParameterizePoints(Reconstruction* reconstruction);
 
-  const Options options_;
+  const BundleAdjustmentOptions options_;
   BundleAdjustmentConfig config_;
   std::unique_ptr<ceres::Problem> problem_;
   ceres::Solver::Summary summary_;
   std::unordered_set<camera_t> camera_ids_;
-  std::unordered_map<point3D_t, size_t> point3D_num_images_;
+  std::unordered_map<point3D_t, size_t> point3D_num_observations_;
 };
 
 // Bundle adjustment using PBA (GPU or CPU). Less flexible and accurate than
@@ -198,16 +199,18 @@ class ParallelBundleAdjuster {
   };
 
   ParallelBundleAdjuster(const Options& options,
+                         const BundleAdjustmentOptions& ba_options,
                          const BundleAdjustmentConfig& config);
 
   bool Solve(Reconstruction* reconstruction);
 
   // Get the Ceres solver summary for the last call to `Solve`.
-  ceres::Solver::Summary Summary() const;
+  const ceres::Solver::Summary& Summary() const;
 
   // Check whether PBA is supported for the given reconstruction. If the
   // reconstruction is not supported, the PBA solver will exit ungracefully.
-  static bool IsReconstructionSupported(const Reconstruction& reconstruction);
+  static bool IsSupported(const BundleAdjustmentOptions& options,
+                          const Reconstruction& reconstruction);
 
  private:
   void SetUp(Reconstruction* reconstruction);
@@ -217,6 +220,7 @@ class ParallelBundleAdjuster {
   void AddPointsToProblem(Reconstruction* reconstruction);
 
   const Options options_;
+  const BundleAdjustmentOptions ba_options_;
   BundleAdjustmentConfig config_;
   ceres::Solver::Summary summary_;
 
@@ -235,7 +239,7 @@ class ParallelBundleAdjuster {
 
 class RigBundleAdjuster : public BundleAdjuster {
  public:
-  struct RigOptions {
+  struct Options {
     // Whether to optimize the relative poses of the camera rigs.
     bool refine_relative_poses = true;
 
@@ -247,7 +251,8 @@ class RigBundleAdjuster : public BundleAdjuster {
     double max_reproj_error = 1000.0;
   };
 
-  RigBundleAdjuster(const Options& options, const RigOptions& rig_options,
+  RigBundleAdjuster(const BundleAdjustmentOptions& options,
+                    const Options& rig_options,
                     const BundleAdjustmentConfig& config);
 
   bool Solve(Reconstruction* reconstruction,
@@ -273,7 +278,7 @@ class RigBundleAdjuster : public BundleAdjuster {
 
   void ParameterizeCameraRigs(Reconstruction* reconstruction);
 
-  const RigOptions rig_options_;
+  const Options rig_options_;
 
   // Mapping from images to camera rigs.
   std::unordered_map<image_t, CameraRig*> image_id_to_camera_rig_;

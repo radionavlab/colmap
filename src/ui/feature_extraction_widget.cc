@@ -16,6 +16,7 @@
 
 #include "ui/feature_extraction_widget.h"
 
+#include "feature/extraction.h"
 #include "ui/options_widget.h"
 #include "ui/qt_utils.h"
 #include "ui/thread_control_widget.h"
@@ -38,10 +39,6 @@ class SIFTExtractionWidget : public ExtractionWidget {
   SIFTExtractionWidget(QWidget* parent, OptionManager* options);
 
   void Run() override;
-
- private:
-  QRadioButton* sift_gpu_;
-  QRadioButton* sift_cpu_;
 };
 
 class ImportFeaturesWidget : public ExtractionWidget {
@@ -62,16 +59,6 @@ ExtractionWidget::ExtractionWidget(QWidget* parent, OptionManager* options)
 SIFTExtractionWidget::SIFTExtractionWidget(QWidget* parent,
                                            OptionManager* options)
     : ExtractionWidget(parent, options) {
-  sift_gpu_ = new QRadioButton(tr("GPU"), this);
-  sift_gpu_->setChecked(true);
-  grid_layout_->addWidget(sift_gpu_);
-  grid_layout_->addWidget(sift_gpu_, grid_layout_->rowCount(), 1);
-
-  sift_cpu_ = new QRadioButton(tr("CPU"), this);
-  grid_layout_->addWidget(sift_cpu_, grid_layout_->rowCount(), 1);
-
-  AddSpacer();
-
   AddOptionInt(&options->sift_extraction->max_image_size, "max_image_size");
   AddOptionInt(&options->sift_extraction->max_num_features, "max_num_features");
   AddOptionInt(&options->sift_extraction->first_octave, "first_octave", -5);
@@ -79,11 +66,20 @@ SIFTExtractionWidget::SIFTExtractionWidget(QWidget* parent,
   AddOptionInt(&options->sift_extraction->octave_resolution,
                "octave_resolution");
   AddOptionDouble(&options->sift_extraction->peak_threshold, "peak_threshold",
-                  0.0, 1e7, 0.0001, 4);
+                  0.0, 1e7, 0.00001, 5);
   AddOptionDouble(&options->sift_extraction->edge_threshold, "edge_threshold");
+  AddOptionBool(&options->sift_extraction->estimate_affine_shape,
+                "estimate_affine_shape");
   AddOptionInt(&options->sift_extraction->max_num_orientations,
                "max_num_orientations");
   AddOptionBool(&options->sift_extraction->upright, "upright");
+  AddOptionBool(&options->sift_extraction->domain_size_pooling,
+                "domain_size_pooling");
+  AddOptionDouble(&options->sift_extraction->dsp_min_scale, "dsp_min_scale",
+                  0.0, 1e7, 0.00001, 5);
+  AddOptionDouble(&options->sift_extraction->dsp_max_scale, "dsp_max_scale",
+                  0.0, 1e7, 0.00001, 5);
+  AddOptionInt(&options->sift_extraction->dsp_num_scales, "dsp_num_scales", 1);
 
   AddOptionInt(&options->sift_extraction->num_threads, "num_threads", -1);
   AddOptionBool(&options->sift_extraction->use_gpu, "use_gpu");
@@ -93,7 +89,7 @@ SIFTExtractionWidget::SIFTExtractionWidget(QWidget* parent,
 void SIFTExtractionWidget::Run() {
   WriteOptions();
 
-  ImageReader::Options reader_options = *options_->image_reader;
+  ImageReaderOptions reader_options = *options_->image_reader;
   reader_options.database_path = *options_->database_path;
   reader_options.image_path = *options_->image_path;
 
@@ -116,7 +112,7 @@ void ImportFeaturesWidget::Run() {
     return;
   }
 
-  ImageReader::Options reader_options = *options_->image_reader;
+  ImageReaderOptions reader_options = *options_->image_reader;
   reader_options.database_path = *options_->database_path;
   reader_options.image_path = *options_->image_path;
 
@@ -251,6 +247,11 @@ void FeatureExtractionWidget::Extract() {
   }
 
   WriteOptions();
+
+  if (!ExistsCameraModelWithName(options_->image_reader->camera_model)) {
+    QMessageBox::critical(this, "", tr("Camera model does not exist"));
+    return;
+  }
 
   const std::vector<double> camera_params =
       CSVToVector<double>(options_->image_reader->camera_params);
