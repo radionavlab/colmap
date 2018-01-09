@@ -1830,7 +1830,7 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
 
     // Uncertainty
     std::getline(line_stream, item, ' ');
-    point3D.SetUncertainty(boost::lexical_cast<double>(item));
+    point3D.SetUncertainty(std::stod(item));
 
     // TRACK
     while (!line_stream.eof()) {
