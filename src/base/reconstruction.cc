@@ -1831,7 +1831,7 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
     // Covariance
     for (size_t j = 0; j < point3D.Covariance().size(); ++j) {
       std::getline(line_stream, item, ' ');
-      point3D.Covariance()(j) = boost::lexical_cast<double>(item);
+      point3D.Covariance()(j) = std::stold(item);
     }
 
     // TRACK

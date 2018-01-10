@@ -20,6 +20,7 @@
 #include "base/reconstruction_manager.h"
 #include "sfm/incremental_mapper.h"
 #include "util/threading.h"
+#include <boost/lexical_cast.hpp>
 
 namespace colmap {
 
@@ -107,6 +108,9 @@ struct IncrementalMapperOptions {
   // Which images to reconstruct. If no images are specified, all images will
   // be reconstructed by default.
   std::set<std::string> image_names;
+
+  // A map containing the original poses of the images
+  std::unordered_map<std::string, Eigen::Matrix3x2d> image_poses;
 
   IncrementalMapper::Options Mapper() const;
   IncrementalTriangulator::Options Triangulation() const;
@@ -223,8 +227,8 @@ class IncrementalMapperController : public Thread {
 
     IncrementalMapper::Options Mapper() const;
     IncrementalTriangulator::Options Triangulation() const;
-    BundleAdjuster::Options LocalBundleAdjustment() const;
-    BundleAdjuster::Options GlobalBundleAdjustment() const;
+    BundleAdjustmentOptions LocalBundleAdjustment() const;
+    BundleAdjustmentOptions GlobalBundleAdjustment() const;
     ParallelBundleAdjuster::Options ParallelGlobalBundleAdjustment() const;
 
     bool Check() const;

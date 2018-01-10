@@ -31,10 +31,10 @@ size_t TriangulateImage(const IncrementalMapperOptions& options,
   return num_tris;
 }
 
-void AdjustGlobalBundle(const IncrementalMapperController::Options& options,
+void AdjustGlobalBundle(const IncrementalMapperOptions& options,
                         IncrementalMapper* mapper,
                         const bool final_iteration = false) {
-  BundleAdjuster::Options custom_options = options.GlobalBundleAdjustment();
+  BundleAdjustmentOptions custom_options = options.GlobalBundleAdjustment();
 
   custom_options.compute_covariance = final_iteration;
 
@@ -92,7 +92,8 @@ void IterativeLocalRefinement(const IncrementalMapperOptions& options,
 }
 
 void IterativeGlobalRefinement(
-    const IncrementalMapperController::Options& options,
+    // const IncrementalMapperController::Options& options,
+    const IncrementalMapperOptions& options,
     IncrementalMapper* mapper,
     const bool final_iteration = false) {
   PrintHeading1("Retriangulation");
