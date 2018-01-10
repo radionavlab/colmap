@@ -296,7 +296,8 @@ void Reconstruction::Normalize(const double extent, const double p0,
   CHECK_LE(p1, 1);
   CHECK_LE(p0, p1);
 
-  if (use_images && reg_image_ids_.size() < 2) {
+  if ((use_images && reg_image_ids_.size() < 2) ||
+      (!use_images && points3D_.size() < 2)) {
     return;
   }
 
@@ -955,9 +956,9 @@ void Reconstruction::ImportPLY(const std::string& path) {
       }
 
       Eigen::Vector3d xyz;
-      xyz(0) = std::stod(items.at(X_index));
-      xyz(1) = std::stod(items.at(Y_index));
-      xyz(2) = std::stod(items.at(Z_index));
+      xyz(0) = std::stold(items.at(X_index));
+      xyz(1) = std::stold(items.at(Y_index));
+      xyz(2) = std::stold(items.at(Z_index));
 
       Eigen::Vector3i rgb;
       if (is_rgb_missing) {
@@ -1154,30 +1155,34 @@ bool Reconstruction::ExportBundler(const std::string& path,
 }
 
 void Reconstruction::ExportPLY(const std::string& path) const {
-  std::ofstream file(path, std::ios::trunc);
-  CHECK(file.is_open()) << path;
+  std::fstream text_file(path, std::ios::out);
+  CHECK(text_file.is_open()) << path;
 
-  file << "ply" << std::endl;
-  file << "format ascii 1.0" << std::endl;
-  file << "element vertex " << points3D_.size() << std::endl;
-  file << "property float x" << std::endl;
-  file << "property float y" << std::endl;
-  file << "property float z" << std::endl;
-  file << "property uchar red" << std::endl;
-  file << "property uchar green" << std::endl;
-  file << "property uchar blue" << std::endl;
-  file << "end_header" << std::endl;
+  text_file << "ply" << std::endl;
+  text_file << "format binary_little_endian 1.0" << std::endl;
+  text_file << "element vertex " << points3D_.size() << std::endl;
+  text_file << "property float x" << std::endl;
+  text_file << "property float y" << std::endl;
+  text_file << "property float z" << std::endl;
+  text_file << "property uchar red" << std::endl;
+  text_file << "property uchar green" << std::endl;
+  text_file << "property uchar blue" << std::endl;
+  text_file << "end_header" << std::endl;
+  text_file.close();
+
+  std::fstream binary_file(path,
+                           std::ios::out | std::ios::binary | std::ios::app);
+  CHECK(binary_file.is_open()) << path;
 
   for (const auto& point3D : points3D_) {
-    file << point3D.second.X() << " ";
-    file << point3D.second.Y() << " ";
-    file << point3D.second.Z() << " ";
-    file << static_cast<int>(point3D.second.Color(0)) << " ";
-    file << static_cast<int>(point3D.second.Color(1)) << " ";
-    file << static_cast<int>(point3D.second.Color(2)) << std::endl;
+    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.X());
+    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.Y());
+    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.Z());
+    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(0));
+    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(1));
+    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(2));
   }
-
-  file << std::endl;
+  binary_file.close();
 }
 
 void Reconstruction::ExportVRML(const std::string& images_path,
@@ -1637,7 +1642,7 @@ void Reconstruction::ReadCamerasText(const std::string& path) {
 
     // ID
     std::getline(line_stream, item, ' ');
-    camera.SetCameraId(std::stoi(item));
+    camera.SetCameraId(std::stoul(item));
 
     // MODEL
     std::getline(line_stream, item, ' ');
@@ -1655,7 +1660,7 @@ void Reconstruction::ReadCamerasText(const std::string& path) {
     camera.Params().clear();
     while (!line_stream.eof()) {
       std::getline(line_stream, item, ' ');
-      camera.Params().push_back(std::stod(item));
+      camera.Params().push_back(std::stold(item));
     }
 
     CHECK(camera.VerifyParams());
@@ -1684,7 +1689,7 @@ void Reconstruction::ReadImagesText(const std::string& path) {
 
     // ID
     std::getline(line_stream1, item, ' ');
-    const image_t image_id = std::stoi(item);
+    const image_t image_id = std::stoul(item);
 
     class Image image;
     image.SetImageId(image_id);
@@ -1694,32 +1699,32 @@ void Reconstruction::ReadImagesText(const std::string& path) {
 
     // QVEC (qw, qx, qy, qz)
     std::getline(line_stream1, item, ' ');
-    image.Qvec(0) = std::stod(item);
+    image.Qvec(0) = std::stold(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(1) = std::stod(item);
+    image.Qvec(1) = std::stold(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(2) = std::stod(item);
+    image.Qvec(2) = std::stold(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Qvec(3) = std::stod(item);
+    image.Qvec(3) = std::stold(item);
 
     image.NormalizeQvec();
 
     // TVEC
     std::getline(line_stream1, item, ' ');
-    image.Tvec(0) = std::stod(item);
+    image.Tvec(0) = std::stold(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Tvec(1) = std::stod(item);
+    image.Tvec(1) = std::stold(item);
 
     std::getline(line_stream1, item, ' ');
-    image.Tvec(2) = std::stod(item);
+    image.Tvec(2) = std::stold(item);
 
     // CAMERA_ID
     std::getline(line_stream1, item, ' ');
-    image.SetCameraId(std::stoi(item));
+    image.SetCameraId(std::stoul(item));
 
     // NAME
     std::getline(line_stream1, item, ' ');
@@ -1741,10 +1746,10 @@ void Reconstruction::ReadImagesText(const std::string& path) {
         Eigen::Vector2d point;
 
         std::getline(line_stream2, item, ' ');
-        point.x() = std::stod(item);
+        point.x() = std::stold(item);
 
         std::getline(line_stream2, item, ' ');
-        point.y() = std::stod(item);
+        point.y() = std::stold(item);
 
         points2D.push_back(point);
 
@@ -1801,13 +1806,13 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
 
     // XYZ
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(0) = std::stod(item);
+    point3D.XYZ(0) = std::stold(item);
 
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(1) = std::stod(item);
+    point3D.XYZ(1) = std::stold(item);
 
     std::getline(line_stream, item, ' ');
-    point3D.XYZ(2) = std::stod(item);
+    point3D.XYZ(2) = std::stold(item);
 
     // Color
     std::getline(line_stream, item, ' ');
@@ -1821,7 +1826,7 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
 
     // ERROR
     std::getline(line_stream, item, ' ');
-    point3D.SetError(std::stod(item));
+    point3D.SetError(std::stold(item));
 
     // Covariance
     for (size_t j = 0; j < point3D.Covariance().size(); ++j) {
@@ -1838,10 +1843,10 @@ void Reconstruction::ReadPoints3DText(const std::string& path) {
       if (item.empty()) {
         break;
       }
-      track_el.image_id = std::stoi(item);
+      track_el.image_id = std::stoul(item);
 
       std::getline(line_stream, item, ' ');
-      track_el.point2D_idx = std::stoi(item);
+      track_el.point2D_idx = std::stoul(item);
 
       point3D.Track().AddElement(track_el);
     }

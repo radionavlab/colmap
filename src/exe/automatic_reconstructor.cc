@@ -20,6 +20,7 @@
 #include "util/logging.h"
 #include "util/misc.h"
 #include "util/option_manager.h"
+#include "util/opengl_utils.h"
 
 using namespace colmap;
 
@@ -45,6 +46,8 @@ int main(int argc, char** argv) {
   options.AddDefaultOption("data_type", &data_type,
                            "{individual, video, internet}");
   options.AddDefaultOption("quality", &quality, "{low, medium, high}");
+  options.AddDefaultOption("camera_model",
+                           &reconstruction_options.camera_model);
   options.AddDefaultOption("single_camera",
                            &reconstruction_options.single_camera);
   options.AddDefaultOption("sparse", &reconstruction_options.sparse);

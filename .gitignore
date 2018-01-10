@@ -49,3 +49,6 @@ compile_commands.json
 *.exe
 *.out
 *.app
+
+# Swap files
+*.swp

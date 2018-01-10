@@ -537,7 +537,7 @@ size_t IncrementalMapper::MergeTracks(
 
 IncrementalMapper::LocalBundleAdjustmentReport
 IncrementalMapper::AdjustLocalBundle(
-    const Options& options, const BundleAdjuster::Options& ba_options,
+    const Options& options, const BundleAdjustmentOptions& ba_options,
     const IncrementalTriangulator::Options& tri_options, const image_t image_id,
     const std::unordered_set<point3D_t>& point3D_ids) {
   CHECK_NOTNULL(reconstruction_);
@@ -618,7 +618,7 @@ IncrementalMapper::AdjustLocalBundle(
 }
 
 bool IncrementalMapper::AdjustGlobalBundle(
-    const BundleAdjuster::Options& ba_options) {
+    const BundleAdjustmentOptions& ba_options) {
   CHECK_NOTNULL(reconstruction_);
 
   const std::vector<image_t>& reg_image_ids = reconstruction_->RegImageIds();
@@ -652,7 +652,8 @@ bool IncrementalMapper::AdjustGlobalBundle(
 }
 
 bool IncrementalMapper::AdjustParallelGlobalBundle(
-    const ParallelBundleAdjuster::Options& ba_options) {
+    const BundleAdjustmentOptions& ba_options,
+    const ParallelBundleAdjuster::Options& parallel_ba_options) {
   CHECK_NOTNULL(reconstruction_);
 
   const std::vector<image_t>& reg_image_ids = reconstruction_->RegImageIds();
@@ -670,7 +671,8 @@ bool IncrementalMapper::AdjustParallelGlobalBundle(
   }
 
   // Run bundle adjustment.
-  ParallelBundleAdjuster bundle_adjuster(ba_options, ba_config);
+  ParallelBundleAdjuster bundle_adjuster(parallel_ba_options, ba_options,
+                                         ba_config);
   if (!bundle_adjuster.Solve(reconstruction_)) {
     return false;
   }
@@ -729,6 +731,7 @@ size_t IncrementalMapper::NumSharedRegImages() const {
 const std::unordered_set<point3D_t>& IncrementalMapper::GetModifiedPoints3D() {
   return triangulator_->GetModifiedPoints3D();
 }
+
 void IncrementalMapper::ClearModifiedPoints3D() {
   triangulator_->ClearModifiedPoints3D();
 }

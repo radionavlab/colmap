@@ -86,7 +86,7 @@ bool HierarchicalMapperController::Options::Check() const {
 
 HierarchicalMapperController::HierarchicalMapperController(
     const Options& options, const SceneClustering::Options& clustering_options,
-    const IncrementalMapperController::Options& mapper_options,
+    const IncrementalMapperOptions& mapper_options,
     ReconstructionManager* reconstruction_manager)
     : options_(options),
       clustering_options_(clustering_options),
@@ -166,7 +166,7 @@ void HierarchicalMapperController::Run() {
       return;
     }
 
-    IncrementalMapperController::Options custom_options = mapper_options_;
+    IncrementalMapperOptions custom_options = mapper_options_;
     custom_options.max_model_overlap = 3;
     custom_options.init_num_trials = options_.init_num_trials;
     custom_options.num_threads = num_threads_per_worker;
@@ -182,8 +182,6 @@ void HierarchicalMapperController::Run() {
     mapper.Wait();
   };
 
-  ThreadPool thread_pool(num_eff_workers);
-
   // Start reconstructing the bigger clusters first for resource usage.
   std::sort(leaf_clusters.begin(), leaf_clusters.end(),
             [](const SceneClustering::Cluster* cluster1,
@@ -196,6 +194,8 @@ void HierarchicalMapperController::Run() {
   std::unordered_map<const SceneClustering::Cluster*, ReconstructionManager>
       reconstruction_managers;
   reconstruction_managers.reserve(leaf_clusters.size());
+
+  ThreadPool thread_pool(num_eff_workers);
   for (const auto& cluster : leaf_clusters) {
     thread_pool.AddTask(ReconstructCluster, *cluster,
                         &reconstruction_managers[cluster]);

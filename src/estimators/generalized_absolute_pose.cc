@@ -154,12 +154,15 @@ std::vector<Eigen::Vector3d> ComputeDepthsSylvester(
   std::vector<Eigen::Vector3d> depths;
   depths.reserve(roots_real.size());
   for (Eigen::VectorXd::Index i = 0; i < roots_real.size(); ++i) {
-    const double kMaxRootImag = 1e-10;
-    if (std::abs(roots_imag(i)) > kMaxRootImag) {
+    const double kMaxRootImagRatio = 1e-3;
+    if (std::abs(roots_imag(i)) > kMaxRootImagRatio * std::abs(roots_real(i))) {
       continue;
     }
 
     const double lambda_3 = roots_real(i);
+    if (lambda_3 <= 0) {
+      continue;
+    }
 
     std::vector<double> lambdas_2;
     ComputeLambdaValues(K.row(2), lambda_3, &lambdas_2);
@@ -174,11 +177,12 @@ std::vector<Eigen::Vector3d> ComputeDepthsSylvester(
       ComputeLambdaValues(K.row(1), lambda_3, &lambdas_1_2);
       for (const double lambda_1_1 : lambdas_1_1) {
         for (const double lambda_1_2 : lambdas_1_2) {
-          const double kMaxLambdaDiff = 1e-3;
-          if (std::abs(lambda_1_1 - lambda_1_2) < kMaxLambdaDiff) {
-            const double lambda_1 = (lambda_1_1 + lambda_1_2) / 2;
-            depths.emplace_back(lambda_1, lambda_2, lambda_3);
-          }
+          const double kMaxLambdaRatio = 1e-2;
+          if (std::abs(lambda_1_1 - lambda_1_2) <
+              kMaxLambdaRatio * std::max(lambda_1_1, lambda_1_2)) {
+              const double lambda_1 = (lambda_1_1 + lambda_1_2) / 2;
+              depths.emplace_back(lambda_1, lambda_2, lambda_3);
+            }
         }
       }
     }
@@ -290,14 +294,15 @@ void GP3PEstimator::Residuals(const std::vector<X_t>& points2D,
                            rel_tform(0, 2) * pgx_2 + rel_tform(0, 3);
       const double pcx_1 = rel_tform(1, 0) * pgx_0 + rel_tform(1, 1) * pgx_1 +
                            rel_tform(1, 2) * pgx_2 + rel_tform(1, 3);
+      const double inv_pcx_norm =
+          1 / std::sqrt(pcx_0 * pcx_0 + pcx_1 * pcx_1 + pcx_2 * pcx_2);
+
       const double x_0 = points2D[i].xy(0);
       const double x_1 = points2D[i].xy(1);
+      const double inv_x_norm = 1 / std::sqrt(x_0 * x_0 + x_1 * x_1 + 1);
 
-      const double inv_pcx_2 = 1.0 / pcx_2;
-      const double dx_0 = x_0 - pcx_0 * inv_pcx_2;
-      const double dx_1 = x_1 - pcx_1 * inv_pcx_2;
-
-      (*residuals)[i] = dx_0 * dx_0 + dx_1 * dx_1;
+      (*residuals)[i] =
+          1 - inv_pcx_norm * inv_x_norm * (pcx_0 * x_0 + pcx_1 * x_1 + pcx_2);
     } else {
       (*residuals)[i] = std::numeric_limits<double>::max();
     }
