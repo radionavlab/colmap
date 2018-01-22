@@ -148,12 +148,6 @@ class BundleAdjustmentConfig {
 // and provides best solution quality.
 class BundleAdjuster {
  public:
-  struct Options {
-    // Whether to compute covariance of 3D points
-    bool compute_covariance = false;
-  };
-
-  BundleAdjuster(const Options& options, const BundleAdjustmentOptions& ba_options, const BundleAdjustmentConfig& config);
   BundleAdjuster(const BundleAdjustmentOptions& ba_options, const BundleAdjustmentConfig& config);
 
   bool Solve(Reconstruction* reconstruction);

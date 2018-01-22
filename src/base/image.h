@@ -118,7 +118,7 @@ class Image {
   inline double& Tvec(const size_t idx);
   inline void SetTvec(const Eigen::Vector3d& tvec);
 
-  // Quaternion prior, e.g. given by EXIF GPS tag.
+  // Position prior, e.g. given by EXIF GPS tag.
   inline const Eigen::Vector3d& TvecPrior() const;
   inline Eigen::Vector3d& TvecPrior();
   inline double TvecPrior(const size_t idx) const;
@@ -301,7 +301,7 @@ inline double Image::QvecPrior(const size_t idx) const {
 inline double& Image::QvecPrior(const size_t idx) { return qvec_prior_(idx); }
 
 inline bool Image::HasQvecPrior() const {
-  return !IsNaN(qvec_prior_.sum()) && qvec_prior_.sum() > 1e-12;
+  return !IsNaN(qvec_prior_.norm()) && qvec_prior_.norm() > 1e-12;
 }
 
 void Image::SetQvecPrior(const Eigen::Vector4d& qvec) { qvec_prior_ = qvec; }
@@ -327,7 +327,7 @@ inline double Image::TvecPrior(const size_t idx) const {
 inline double& Image::TvecPrior(const size_t idx) { return tvec_prior_(idx); }
 
 inline bool Image::HasTvecPrior() const {
-  return !IsNaN(tvec_prior_.sum()) && tvec_prior_.sum() > 1e-12;
+  return !IsNaN(tvec_prior_.norm()) && tvec_prior_.norm() > 1e-12;
 }
 
 void Image::SetTvecPrior(const Eigen::Vector3d& tvec) { tvec_prior_ = tvec; }

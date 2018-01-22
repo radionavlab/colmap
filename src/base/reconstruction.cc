@@ -977,6 +977,8 @@ void Reconstruction::ImportPLY(const std::string& path) {
 
 bool Reconstruction::ExportNVM(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   file << "NVM_V3" << std::endl << std::endl;
@@ -1058,6 +1060,8 @@ bool Reconstruction::ExportNVM(const std::string& path) const {
 bool Reconstruction::ExportBundler(const std::string& path,
                                    const std::string& list_path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   std::ofstream list_file(list_path, std::ios::trunc);
@@ -1190,6 +1194,8 @@ void Reconstruction::ExportVRML(const std::string& images_path,
                                 const double image_scale,
                                 const Eigen::Vector3d& image_rgb) const {
   std::ofstream images_file(images_path, std::ios::trunc);
+  images_file.setf(std::ios::fixed, std::ios::floatfield);
+  images_file.precision(10);
   CHECK(images_file.is_open()) << images_path;
 
   const double six = image_scale * 0.15;
@@ -1273,6 +1279,8 @@ void Reconstruction::ExportVRML(const std::string& images_path,
   // Write 3D points
 
   std::ofstream points3D_file(points3D_path, std::ios::trunc);
+  points3D_file.setf(std::ios::fixed, std::ios::floatfield);
+  points3D_file.precision(10);
   CHECK(points3D_file.is_open()) << points3D_path;
 
   points3D_file << "#VRML V2.0 utf8\n";
@@ -1303,6 +1311,8 @@ void Reconstruction::ExportVRML(const std::string& images_path,
 
 bool Reconstruction::ExportOpenMVS(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   MVS::Interface scene;
@@ -1971,6 +1981,8 @@ void Reconstruction::ReadPoints3DBinary(const std::string& path) {
 
 void Reconstruction::WriteCamerasText(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   file << "# Camera list with one line of data per camera:" << std::endl;
@@ -1998,6 +2010,8 @@ void Reconstruction::WriteCamerasText(const std::string& path) const {
 
 void Reconstruction::WriteImagesText(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   file << "# Image list with two lines of data per image:" << std::endl;
@@ -2058,6 +2072,8 @@ void Reconstruction::WriteImagesText(const std::string& path) const {
 
 void Reconstruction::WritePoints3DText(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   file << "# 3D point list with one line of data per point:" << std::endl;
@@ -2097,6 +2113,8 @@ void Reconstruction::WritePoints3DText(const std::string& path) const {
 
 void Reconstruction::WriteCamerasBinary(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc | std::ios::binary);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   WriteBinaryLittleEndian<uint64_t>(&file, cameras_.size());
@@ -2114,6 +2132,8 @@ void Reconstruction::WriteCamerasBinary(const std::string& path) const {
 
 void Reconstruction::WriteImagesBinary(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc | std::ios::binary);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   WriteBinaryLittleEndian<uint64_t>(&file, reg_image_ids_.size());
@@ -2152,6 +2172,8 @@ void Reconstruction::WriteImagesBinary(const std::string& path) const {
 
 void Reconstruction::WritePoints3DBinary(const std::string& path) const {
   std::ofstream file(path, std::ios::trunc | std::ios::binary);
+  file.setf(std::ios::fixed, std::ios::floatfield);
+  file.precision(10);
   CHECK(file.is_open()) << path;
 
   WriteBinaryLittleEndian<uint64_t>(&file, points3D_.size());

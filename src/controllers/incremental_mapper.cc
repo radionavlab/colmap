@@ -232,7 +232,8 @@ std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
   return image_poses;
 }
 
-IncrementalMapper::Options IncrementalMapperController::Options::Mapper()
+// IncrementalMapper::Options IncrementalMapperController::Options::Mapper()
+IncrementalMapper::Options IncrementalMapperOptions::Mapper()
     const {
   IncrementalMapper::Options options = mapper;
   options.abs_pose_refine_focal_length = ba_refine_focal_length;
@@ -350,8 +351,11 @@ void IncrementalMapperController::Run() {
   }
 
   IncrementalMapper::Options init_mapper_options = options_->Mapper();
-  Reconstruct(init_mapper_options);
 
+/* TODO
+  // The block below was replaced by a single reconstruct call
+  // Reconstruct(init_mapper_options);
+*/
   const size_t kNumInitRelaxations = 2;
   for (size_t i = 0; i < kNumInitRelaxations; ++i) {
     if (reconstruction_manager_->Size() > 0 || IsStopped()) {
@@ -370,7 +374,6 @@ void IncrementalMapperController::Run() {
     init_mapper_options.init_min_tri_angle /= 2;
     Reconstruct(init_mapper_options);
   }
-
   std::cout << std::endl;
   GetTimer().PrintMinutes();
 }
@@ -444,17 +447,26 @@ void IncrementalMapperController::Reconstruct(
         auto it = options_->image_poses.find(image.second.Name());
         if (it != options_->image_poses.end()) {
           class Image& reimage = reconstruction.Image(image.first);
-          const double angle = it->second.col(0).norm();
-          const Eigen::Vector3d axis = it->second.col(0) / angle;
-          Eigen::AngleAxisd aa(angle, axis);
-          Eigen::Quaterniond q(aa);
+
+          const Eigen::Vector3d pos = it->second.col(0);
+          const Eigen::Vector3d rot = it->second.col(1);
+
+          const double roll  = rot(0);
+          const double pitch = rot(1);
+          const double yaw   = rot(2);
+
+          const Eigen::Quaterniond q(
+                  Eigen::AngleAxisd(roll,   Eigen::Vector3d::UnitX())
+                * Eigen::AngleAxisd(pitch,  Eigen::Vector3d::UnitY())
+                * Eigen::AngleAxisd(yaw,    Eigen::Vector3d::UnitZ()));
+
           reimage.SetQvecPrior(Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()));
-          reimage.SetTvecPrior(it->second.col(1));
+          reimage.SetTvecPrior(pos);
         }
       }
     }
 
-    ////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
     // Register initial pair
     ////////////////////////////////////////////////////////////////////////////
 
@@ -625,7 +637,8 @@ void IncrementalMapperController::Reconstruct(
       if (!reg_next_success && prev_reg_next_success) {
         reg_next_success = true;
         prev_reg_next_success = false;
-        IterativeGlobalRefinement(*options_, &mapper, true);
+        // IterativeGlobalRefinement(*options_, &mapper, true);
+        IterativeGlobalRefinement(*options_, &mapper);
       } else {
         prev_reg_next_success = reg_next_success;
       }
@@ -638,11 +651,15 @@ void IncrementalMapperController::Reconstruct(
     }
 
     // Only run final global BA, if last incremental BA was not global.
+    /* TODO
+    */
     if (reconstruction.NumRegImages() >= 2 &&
         reconstruction.NumRegImages() != ba_prev_num_reg_images &&
         reconstruction.NumPoints3D() != ba_prev_num_points) {
-      IterativeGlobalRefinement(*options_, &mapper, true);
+      // IterativeGlobalRefinement(*options_, &mapper, true);
+      IterativeGlobalRefinement(*options_, &mapper);
     }
+    // IterativeGlobalRefinement(*options_, &mapper, true);
 
     // If the total number of images is small then do not enforce the minimum
     // model size so that we can reconstruct small image collections.

@@ -228,16 +228,10 @@ void BundleAdjustmentConfig::RemoveConstantPoint(const point3D_t point3D_id) {
 // BundleAdjuster
 ////////////////////////////////////////////////////////////////////////////////
 
-BundleAdjuster::BundleAdjuster(const Options& options, 
-                               const BundleAdjustmentOptions& ba_options, 
+BundleAdjuster::BundleAdjuster(const BundleAdjustmentOptions& ba_options, 
                                const BundleAdjustmentConfig& config)
     : options_(ba_options), config_(config) {
   CHECK(options_.Check());
-}
-
-BundleAdjuster::BundleAdjuster(const BundleAdjustmentOptions& ba_options,
-                               const BundleAdjustmentConfig& config)
-    : BundleAdjuster(BundleAdjuster::Options(), ba_options, config) {
 }
 
 bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
