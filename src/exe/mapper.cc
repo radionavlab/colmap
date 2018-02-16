@@ -35,7 +35,6 @@ int main(int argc, char** argv) {
   options.AddDefaultOption("import_path", &import_path);
   options.AddRequiredOption("export_path", &export_path);
   options.AddDefaultOption("image_list_path", &image_list_path);
-  options.AddDefaultOption("image_pose_path", &image_pose_path);
   options.AddMapperOptions();
   options.Parse(argc, argv);
 
@@ -48,10 +47,6 @@ int main(int argc, char** argv) {
     const auto image_names = ReadTextFileLines(image_list_path);
     options.mapper->image_names =
         std::set<std::string>(image_names.begin(), image_names.end());
-  }
-
-  if (!image_pose_path.empty()) {
-    options.mapper->image_poses = ReadImagePoseMeasurements(image_pose_path);
   }
 
   ReconstructionManager reconstruction_manager;

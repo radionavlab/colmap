@@ -31,6 +31,7 @@
 #include "base/track.h"
 #include "util/alignment.h"
 #include "util/types.h"
+#include "base/similarity_transform.h"
 
 namespace colmap {
 
@@ -169,6 +170,13 @@ class Reconstruction {
                    const std::vector<Eigen::Vector3d>& locations,
                    const int min_common_images,
                    const RANSACOptions& ransac_options);
+
+  // Determines the similarity transform that aligns the camera position and a
+  // set of image priors. Applies the transformation to the image priors.
+  bool AlignMeasurements(const std::vector<std::string>& image_names,
+             const std::vector<Eigen::Vector3d>& locations,
+             const int min_common_images,
+             SimilarityTransform3& tform);
 
   // Find image with name.
   //

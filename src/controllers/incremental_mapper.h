@@ -110,7 +110,7 @@ struct IncrementalMapperOptions {
   std::set<std::string> image_names;
 
   // External pose measurements for each image
-  std::unordered_map<std::string, Eigen::Matrix3x2d> image_poses;
+  std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > image_poses;
 
   IncrementalMapper::Options Mapper() const;
   IncrementalTriangulator::Options Triangulation() const;
@@ -172,8 +172,8 @@ size_t CompleteAndMergeTracks(
     IncrementalMapper* mapper);
 
 // Read in image pose measurements from file
-std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
-    const std::string& path);
+// std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
+//     const std::string& path);
 
 }  // namespace colmap
 

@@ -110,7 +110,7 @@ class Image {
   inline bool HasQvecPrior() const;
   inline void SetQvecPrior(const Eigen::Vector4d& qvec);
 
-  // Access quaternion vector as (tx, ty, tz) specifying the translation of the
+  // Access vector as (tx, ty, tz) specifying the translation of the
   // pose which is defined as the transformation from world to image space.
   inline const Eigen::Vector3d& Tvec() const;
   inline Eigen::Vector3d& Tvec();

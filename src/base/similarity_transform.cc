@@ -58,6 +58,13 @@ void SimilarityTransform3::TransformPoint(Eigen::Vector3d* xyz) const {
   *xyz = transform_ * *xyz;
 }
 
+void SimilarityTransform3::TransformQuaternion(Eigen::Vector4d* qvec) const {
+    *qvec = RotationMatrixToQuaternion(
+                transform_.matrix().topLeftCorner<3,3>() * 
+                QuaternionToRotationMatrix(*qvec) / Scale()
+            );
+}
+
 void SimilarityTransform3::TransformPose(Eigen::Vector4d* qvec,
                                          Eigen::Vector3d* tvec) const {
   // Projection matrix P1 projects 3D object points to image plane and thus to

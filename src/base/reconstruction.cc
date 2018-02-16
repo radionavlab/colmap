@@ -21,8 +21,8 @@
 #include "base/pose.h"
 #include "base/projection.h"
 #include "base/similarity_transform.h"
-#include "base/triangulation.h"
 #include "estimators/similarity_transform.h"
+#include "base/triangulation.h"
 #include "optim/loransac.h"
 #include "util/bitmap.h"
 #include "util/misc.h"
@@ -597,6 +597,53 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
   for (auto& point3D : points3D_) {
     tform.TransformPoint(&point3D.second.XYZ());
   }
+
+  return true;
+}
+
+bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_names,
+                                       const std::vector<Eigen::Vector3d>& measurements,
+                                       const int min_common_images,
+                                       SimilarityTransform3& tform) {
+  CHECK_GE(min_common_images, 3);
+  CHECK_EQ(image_names.size(), measurements.size());
+
+  // Find out which images are contained in the reconstruction and get the
+  // positions of their camera centers.
+  std::set<image_t> common_image_ids;
+  std::vector<Eigen::Vector3d> src;
+  std::vector<Eigen::Vector3d> dst;
+  for (size_t i = 0; i < image_names.size(); ++i) {
+    const class Image* image = FindImageWithName(image_names[i]);
+    if (image == nullptr) {
+      continue;
+    }
+
+    if (!IsImageRegistered(image->ImageId())) {
+      continue;
+    }
+
+    // Ignore duplicate images.
+    if (common_image_ids.count(image->ImageId()) > 0) {
+      continue;
+    }
+
+    common_image_ids.insert(image->ImageId());
+
+    // src is the measured location of the image
+    src.push_back(measurements[i]);
+
+    // dst is the estimated location of the image
+    dst.push_back(image->ProjectionCenter());
+  }
+
+  // Only compute the alignment if there are enough correspondences.
+  if (common_image_ids.size() < static_cast<size_t>(min_common_images)) {
+    return false;
+  }
+
+  // Estimate the similarity transformation between the two reconstructions.
+  tform.Estimate(src, dst);
 
   return true;
 }
