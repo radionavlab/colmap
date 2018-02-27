@@ -648,6 +648,33 @@ bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_nam
   return true;
 }
 
+bool Reconstruction::ReAlign(const SimilarityTransform3& tform) {
+
+  for (auto& point3D : points3D_) {
+    tform.TransformPoint(&point3D.second.XYZ());
+  }
+
+  for (auto& image : images_) {
+    tform.TransformPose(&image.second.Qvec(), &image.second.Tvec());
+  }
+
+  return true;
+}
+
+void Reconstruction::AddPriors(const std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > priors) {
+
+  for (const auto& image : this->Images()) { 
+      auto it = priors.find(image.second.Name()); 
+      if (it != priors.end()) { 
+          class Image& reimage = this->Image(image.first);
+          reimage.SetTvecPrior(it->second.first);
+          reimage.SetQvecPrior(it->second.second);
+      }
+  }
+
+  return;
+}
+
 const class Image* Reconstruction::FindImageWithName(
     const std::string& name) const {
   for (const auto& elem : images_) {

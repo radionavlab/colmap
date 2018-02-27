@@ -51,37 +51,45 @@ class CameraPoseCostFunction {
     const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
 
     // Convert camera to inertial frame
-    T tvec_local[3];
-    ceres::QuaternionRotatePoint(qvec, tvec, tvec_local);
+    // T tvec_local[3];
+    // ceres::QuaternionRotatePoint(qvec, tvec, tvec_local);
 
     // Convert camera measurement to inertial frame
-    T tvec_meas_local[3];
-    ceres::QuaternionRotatePoint(qvec_meas, tvec_meas, tvec_meas_local);
+    // T tvec_meas_local[3];
+    // ceres::QuaternionRotatePoint(qvec_meas, tvec_meas, tvec_meas_local);
 
     // Conjugate measurement quaternion to calculate error
-    const T qvec_meas_conj[4] = {-qvec_meas[0], 
-                                  qvec_meas[1], 
-                                  qvec_meas[2], 
-                                  qvec_meas[3]};
+    // const T qvec_meas_conj[4] = {-qvec_meas[0], 
+    //                               qvec_meas[1], 
+    //                               qvec_meas[2], 
+    //                               qvec_meas[3]};
 
     // Calculate quaternion error
-    T dq[4];
-    ceres::QuaternionProduct(qvec, qvec_meas_conj, dq);
+    // T dq[4];
+    // ceres::QuaternionProduct(qvec, qvec_meas_conj, dq);
 
     // Normalize quaternion error
-    const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
-    dq[0] /= norm;
-    dq[1] /= norm;
-    dq[2] /= norm;
-    dq[3] /= norm;
+    // const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
+    // dq[0] /= norm;
+    // dq[1] /= norm;
+    // dq[2] /= norm;
+    // dq[3] /= norm;
 
     // Convert quaternion error to axis-angle representation
-    ceres::QuaternionToAngleAxis(dq, residuals);
+    // ceres::QuaternionToAngleAxis(dq, residuals);
+
+    // Not counting angles right now
+    residuals[0] = T(0);
+    residuals[1] = T(0);
+    residuals[2] = T(0);
 
     // Calculate translate residuals
-    residuals[3] = tvec_local[0] - tvec_meas_local[0];
-    residuals[4] = tvec_local[1] - tvec_meas_local[1];
-    residuals[5] = tvec_local[2] - tvec_meas_local[2];
+    // residuals[3] = tvec_local[0] - tvec_meas_local[0];
+    // residuals[4] = tvec_local[1] - tvec_meas_local[1];
+    // residuals[5] = tvec_local[2] - tvec_meas_local[2];
+    residuals[3] = tvec[0] - tvec_meas[0];
+    residuals[4] = tvec[1] - tvec_meas[1];
+    residuals[5] = tvec[2] - tvec_meas[2];
 
     return true;
   }

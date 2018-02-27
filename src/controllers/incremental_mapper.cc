@@ -639,6 +639,7 @@ void IncrementalMapperController::Reconstruct(
 
     // Only run final global BA, if last incremental BA was not global.
     /* TODO
+     * Would normally compute covariance here but this function gets called multiple times
     */
     if (reconstruction.NumRegImages() >= 2 &&
         reconstruction.NumRegImages() != ba_prev_num_reg_images &&
@@ -646,7 +647,6 @@ void IncrementalMapperController::Reconstruct(
       // IterativeGlobalRefinement(*options_, &mapper, true);
       IterativeGlobalRefinement(*options_, &mapper);
     }
-    // IterativeGlobalRefinement(*options_, &mapper, true);
 
     // If the total number of images is small then do not enforce the minimum
     // model size so that we can reconstruct small image collections.

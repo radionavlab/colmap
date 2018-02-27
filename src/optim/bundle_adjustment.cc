@@ -364,14 +364,22 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   double* qvec_data = image.Qvec().data();
   double* tvec_data = image.Tvec().data();
   double* camera_params_data = camera.ParamsData();
+  double* projection_center_data = image.ProjectionCenter().data();
 
   // Collect cameras for final parameterization.
   CHECK(image.HasCamera());
 
   if (image.HasTvecPrior() && image.HasQvecPrior()) {
+      std::cout 
+          << image.Name() << std::endl 
+          << image.TvecPrior().transpose() << std::endl 
+          << image.Tvec().transpose() << std::endl 
+          << image.ProjectionCenter().transpose() << std::endl 
+          << std::endl;
+
     problem_->AddResidualBlock(
         CameraPoseCostFunction::Create(image.QvecPrior(), image.TvecPrior()),
-        NULL, qvec_data, tvec_data);
+        NULL, qvec_data, projection_center_data);
   }
 
   const bool constant_pose = config_.HasConstantPose(image_id);

@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "controllers/incremental_mapper.h"
+#include "controllers/bundle_adjustment.h"
 #include "util/logging.h"
 #include "util/misc.h"
 #include "util/option_manager.h"
@@ -57,7 +58,7 @@ int main(int argc, char** argv) {
   OptionManager options;
   options.AddDatabaseOptions();
   options.AddImageOptions();
-  options.AddDefaultOption("import_path", &import_path);
+  options.AddRequiredOption("import_path", &import_path);
   options.AddRequiredOption("export_path", &export_path);
   options.AddRequiredOption("image_pose_path", &image_pose_path);
   options.AddMapperOptions();
@@ -74,52 +75,6 @@ int main(int argc, char** argv) {
         std::set<std::string>(image_names.begin(), image_names.end());
   }
 
-  // Import a previous reconstruction
-  ReconstructionManager reconstruction_manager;
-  if (import_path != "") {
-    if (!ExistsDir(import_path)) {
-      std::cerr << "ERROR: `import_path` is not a directory." << std::endl;
-      return EXIT_FAILURE;
-    }
-    reconstruction_manager.Read(import_path);
-  }
-
-  // Perform the reconstruction
-  IncrementalMapperController mapper(options.mapper.get(), *options.image_path,
-                                     *options.database_path,
-                                     &reconstruction_manager);
-
-  // In case a new reconstruction is started, write results of individual sub-
-  // models to as their reconstruction finishes instead of writing all results
-  // after all reconstructions finished.
-  size_t prev_num_reconstructions = 0;
-  if (import_path == "") {
-    mapper.AddCallback(
-        IncrementalMapperController::LAST_IMAGE_REG_CALLBACK, [&]() {
-          // If the number of reconstructions has not changed, the last model
-          // was discarded for some reason.
-          if (reconstruction_manager.Size() > prev_num_reconstructions) {
-            const std::string reconstruction_path = JoinPaths(
-                export_path, std::to_string(prev_num_reconstructions));
-            const auto& reconstruction =
-                reconstruction_manager.Get(prev_num_reconstructions);
-            CreateDirIfNotExists(reconstruction_path);
-            reconstruction.Write(reconstruction_path);
-            options.Write(JoinPaths(reconstruction_path, "project.ini"));
-            prev_num_reconstructions = reconstruction_manager.Size();
-          }
-        });
-  }
-
-  mapper.Start();
-  mapper.Wait();
-
-  // In case the reconstruction is continued from an existing reconstruction, do
-  // not create sub-folders but directly write the results.
-  if (import_path != "" && reconstruction_manager.Size() > 0) {
-    reconstruction_manager.Get(0).Write(export_path);
-  }
-
   /* GAME PLAN
   * 1) Read in the camera measurements
   * 2) Determine the similarity transform
@@ -127,6 +82,23 @@ int main(int argc, char** argv) {
   * 4) Insert the measurements into Colmap Image object 
   * 5) Re-run the mapper with the new cost function
   */
+
+  /* 0) Setup */
+  // ReconstructionManager reconstruction_manager;
+  // if (import_path != "") {
+  //   if (!ExistsDir(import_path)) {
+  //     std::cerr << "ERROR: `import_path` is not a directory." << std::endl;
+  //     return EXIT_FAILURE;
+  //   }
+  //   reconstruction_manager.Read(import_path);
+  // }
+
+  // IncrementalMapperController mapper(options.mapper.get(), *options.image_path,
+  //                                    *options.database_path,
+  //                                    &reconstruction_manager);
+  //
+  Reconstruction reconstruction;
+  reconstruction.Read(import_path);
 
   /* 1) Read in the camera measurements */
   std::vector<std::string> image_names;
@@ -136,7 +108,8 @@ int main(int argc, char** argv) {
 
   /* 2) Determine the similarity transform */
   SimilarityTransform3 tform;
-  bool alignment_success = reconstruction_manager.Get(0).AlignMeasurements(
+  // bool alignment_success = reconstruction_manager.Get(0).AlignMeasurements(
+  bool alignment_success = reconstruction.AlignMeasurements(
           image_names,
           measured_camera_positions,
           3,
@@ -182,18 +155,29 @@ int main(int argc, char** argv) {
   }
 
   // 4) Insert the measurements into reconstruction
-  options.mapper->image_poses = image_poses;
+  // options.mapper->image_poses = image_poses;
+  reconstruction.AddPriors(image_poses);
 
-  // Perform the reconstruction with priors
+
   // 5) Re-run the mapper with the new cost function
   // mapper.Start();
   // mapper.Wait();
+  BundleAdjustmentController ba_controller(options, &reconstruction);
+  ba_controller.Start();
+  ba_controller.Wait();
+
+  // 6) Apply inverse similarity transform to the model
+  SimilarityTransform3 tformInverse = tform.Inverse();
+  // reconstruction_manager.Get(0).ReAlign(tformInverse);
+  reconstruction.ReAlign(tformInverse);
 
   // In case the reconstruction is continued from an existing reconstruction, do
   // not create sub-folders but directly write the results.
-  // if (import_path != "" && reconstruction_manager.Size() > 0) {
+  // if(import_path != "" && reconstruction_manager.Size() > 0) {
   //   reconstruction_manager.Get(0).Write(export_path);
   // }
+  
+  // reconstruction.Write(export_path);
 
   return EXIT_SUCCESS;
 }
