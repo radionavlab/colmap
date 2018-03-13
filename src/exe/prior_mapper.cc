@@ -83,20 +83,6 @@ int main(int argc, char** argv) {
   * 5) Re-run the mapper with the new cost function
   */
 
-  /* 0) Setup */
-  // ReconstructionManager reconstruction_manager;
-  // if (import_path != "") {
-  //   if (!ExistsDir(import_path)) {
-  //     std::cerr << "ERROR: `import_path` is not a directory." << std::endl;
-  //     return EXIT_FAILURE;
-  //   }
-  //   reconstruction_manager.Read(import_path);
-  // }
-
-  // IncrementalMapperController mapper(options.mapper.get(), *options.image_path,
-  //                                    *options.database_path,
-  //                                    &reconstruction_manager);
-  //
   Reconstruction reconstruction;
   reconstruction.Read(import_path);
 
@@ -108,7 +94,6 @@ int main(int argc, char** argv) {
 
   /* 2) Determine the similarity transform */
   SimilarityTransform3 tform;
-  // bool alignment_success = reconstruction_manager.Get(0).AlignMeasurements(
   bool alignment_success = reconstruction.AlignMeasurements(
           image_names,
           measured_camera_positions,
@@ -158,17 +143,13 @@ int main(int argc, char** argv) {
   // options.mapper->image_poses = image_poses;
   reconstruction.AddPriors(image_poses);
 
-
   // 5) Re-run the mapper with the new cost function
-  // mapper.Start();
-  // mapper.Wait();
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
   ba_controller.Wait();
 
   // 6) Apply inverse similarity transform to the model
   SimilarityTransform3 tformInverse = tform.Inverse();
-  // reconstruction_manager.Get(0).ReAlign(tformInverse);
   reconstruction.ReAlign(tformInverse);
 
   // In case the reconstruction is continued from an existing reconstruction, do
