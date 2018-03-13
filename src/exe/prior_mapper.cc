@@ -108,7 +108,6 @@ int main(int argc, char** argv) {
 
   /* 2) Determine the similarity transform */
   SimilarityTransform3 tform;
-  // bool alignment_success = reconstruction_manager.Get(0).AlignMeasurements(
   bool alignment_success = reconstruction.AlignMeasurements(
           image_names,
           measured_camera_positions,
@@ -144,8 +143,13 @@ int main(int argc, char** argv) {
     measurement_orientations.push_back(measurement_orientation);
 
     // Apply similarity 
+    // The new measurements are in the visual frame.
     tform.TransformPoint(&measurement_locations[i]);
     tform.TransformQuaternion(&measurement_orientations[i]);
+
+    // Rotate the measurements to the camera frame. This aligns the QvecPriors
+    // with Qvec, and the TvecPriors with Tvec
+    // -1*QuaternionRotatePoint(QvecPrior, TvecPrior);
      
     // Add transformed measurement to set
     image_poses.insert({
