@@ -601,6 +601,9 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
   return true;
 }
 
+// Composes a similarity transform that aligns camera measurements with the
+// estimated projection centers of the cameras. After applying the similarity
+// transform, the new measurementes will be expressed in the visual frame
 bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_names,
                                        const std::vector<Eigen::Vector3d>& measurements,
                                        const int min_common_images,
