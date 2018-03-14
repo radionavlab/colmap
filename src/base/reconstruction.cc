@@ -601,15 +601,14 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
   return true;
 }
 
-// Composes a similarity transform that aligns camera measurements with the
-// estimated projection centers of the cameras. After applying the similarity
-// transform, the new measurementes will be expressed in the visual frame
+// Composes similarity transform that aligns TvecPriors given in the global
+// frame with Tvec given in the visual frame
 bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_names,
-                                       const std::vector<Eigen::Vector3d>& measurements,
+                                       const std::vector<Eigen::Vector3d>& TvecPriors,
                                        const int min_common_images,
                                        SimilarityTransform3& tform) {
   CHECK_GE(min_common_images, 3);
-  CHECK_EQ(image_names.size(), measurements.size());
+  CHECK_EQ(image_names.size(), TvecPriors.size());
 
   // Find out which images are contained in the reconstruction and get the
   // positions of their camera centers.
@@ -634,7 +633,7 @@ bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_nam
     common_image_ids.insert(image->ImageId());
 
     // src is the measured location of the image
-    src.push_back(measurements[i]);
+    src.push_back(TvecPriors[i]);
 
     // dst is the estimated location of the image
     dst.push_back(image->ProjectionCenter());
@@ -665,15 +664,14 @@ bool Reconstruction::ReAlign(const SimilarityTransform3& tform) {
 }
 
 void Reconstruction::AddPriors(const std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > priors) {
-
-  for (const auto& image : this->Images()) { 
-      auto it = priors.find(image.second.Name()); 
-      if (it != priors.end()) { 
-          class Image& reimage = this->Image(image.first);
-          reimage.SetTvecPrior(it->second.first);
-          reimage.SetQvecPrior(it->second.second);
-      }
-  }
+    for (const auto& image : this->Images()) { 
+        auto it = priors.find(image.second.Name()); 
+        if (it != priors.end()) { 
+            class Image& reimage = this->Image(image.first);
+            reimage.SetTvecPrior(it->second.first);
+            reimage.SetQvecPrior(it->second.second);
+        }
+    }
 
   return;
 }

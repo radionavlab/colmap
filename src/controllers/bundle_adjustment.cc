@@ -86,7 +86,10 @@ void BundleAdjustmentController::Run() {
 
   // Normalize scene for numerical stability and
   // to avoid large scale changes in viewer.
-  reconstruction_->Normalize();
+  // If using prirs, don't normalize
+  if(ba_options.normalize) {
+    reconstruction_->Normalize();
+  } 
 
   GetTimer().PrintMinutes();
 }

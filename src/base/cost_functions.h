@@ -47,8 +47,8 @@ class CameraPoseCostFunction {
   template <typename T>
   bool operator()(const T* const qvec, const T* const tvec, 
                   T* residuals) const {
-    const T qvec_meas[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
-    const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
+    const T qvec_meas_visual[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
+    const T tvec_meas_visual[3] = {T(tx_), T(ty_), T(tz_)};
 
     // Convert camera to inertial frame
     // T tvec_local[3];
@@ -87,9 +87,18 @@ class CameraPoseCostFunction {
     // residuals[3] = tvec_local[0] - tvec_meas_local[0];
     // residuals[4] = tvec_local[1] - tvec_meas_local[1];
     // residuals[5] = tvec_local[2] - tvec_meas_local[2];
-    residuals[3] = tvec[0] - tvec_meas[0];
-    residuals[4] = tvec[1] - tvec_meas[1];
-    residuals[5] = tvec[2] - tvec_meas[2];
+    
+    // Measurements are in visual frame
+    // Data are in camera frame
+    // Rotate the data to the visual frame
+    T tvec_visual[3];
+    T tvec_camera[3] = {-tvec[0], -tvec[1], -tvec[2]};
+    T qvec_camera[4] = {qvec[0], -qvec[1], -qvec[2], -qvec[3]};
+    ceres::QuaternionRotatePoint(qvec_camera, tvec_camera, tvec_visual);
+    
+    residuals[3] = tvec_visual[0] - tvec_meas_visual[0];
+    residuals[4] = tvec_visual[1] - tvec_meas_visual[1];
+    residuals[5] = tvec_visual[2] - tvec_meas_visual[2];
 
     return true;
   }

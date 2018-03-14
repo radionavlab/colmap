@@ -50,6 +50,9 @@ struct BundleAdjustmentOptions {
 
   // Whether to compute covariance of 3D points
   bool compute_covariance = false;
+  
+  // Whether to use priors or not
+  bool normalize = true;
 
   // Whether to print a final summary.
   bool print_summary = true;

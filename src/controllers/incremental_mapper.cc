@@ -32,11 +32,8 @@ size_t TriangulateImage(const IncrementalMapperOptions& options,
 }
 
 void AdjustGlobalBundle(const IncrementalMapperOptions& options,
-                        IncrementalMapper* mapper,
-                        const bool final_iteration = false) {
+                        IncrementalMapper* mapper) {
   BundleAdjustmentOptions custom_options = options.GlobalBundleAdjustment();
-
-  custom_options.compute_covariance = final_iteration;
 
   const size_t num_reg_images = mapper->GetReconstruction().NumRegImages();
 
@@ -91,11 +88,8 @@ void IterativeLocalRefinement(const IncrementalMapperOptions& options,
   mapper->ClearModifiedPoints3D();
 }
 
-void IterativeGlobalRefinement(
-    // const IncrementalMapperController::Options& options,
-    const IncrementalMapperOptions& options,
-    IncrementalMapper* mapper,
-    const bool final_iteration = false) {
+void IterativeGlobalRefinement(const IncrementalMapperOptions& options,
+                               IncrementalMapper* mapper) {
   PrintHeading1("Retriangulation");
   CompleteAndMergeTracks(options, mapper);
   std::cout << "  => Retriangulated observations: "
@@ -105,7 +99,7 @@ void IterativeGlobalRefinement(
     const size_t num_observations =
         mapper->GetReconstruction().ComputeNumObservations();
     size_t num_changed_observations = 0;
-    AdjustGlobalBundle(options, mapper, final_iteration);
+    AdjustGlobalBundle(options, mapper);
     num_changed_observations += CompleteAndMergeTracks(options, mapper);
     num_changed_observations += FilterPoints(options, mapper);
     const double changed =
@@ -177,64 +171,7 @@ size_t CompleteAndMergeTracks(const IncrementalMapperOptions& options,
   return num_completed_observations + num_merged_observations;
 }
 
-// std::unordered_map<std::string, Eigen::Matrix3x2d> ReadImagePoseMeasurements(
-//     const std::string& path) {
-//   std::ifstream file(path);
-//   CHECK(file.is_open()) << path;
-// 
-//   std::string line;
-//   std::string item;
-// 
-//   std::unordered_map<std::string, Eigen::Matrix3x2d> image_poses;
-// 
-//   while (std::getline(file, line)) {
-//     StringTrim(&line);
-// 
-//     if (line.empty() || line[0] == '#') {
-//       continue;
-//     }
-// 
-//     std::stringstream line_stream(line);
-// 
-//     // Image name
-//     std::getline(line_stream, item, ' ');
-//     const std::string image_name = boost::lexical_cast<std::string>(item);
-// 
-//     Eigen::Matrix3x2d pose;
-// 
-//     // Rx
-//     std::getline(line_stream, item, ' ');
-//     pose(0, 0) = boost::lexical_cast<double>(item);
-// 
-//     // Ry
-//     std::getline(line_stream, item, ' ');
-//     pose(1, 0) = boost::lexical_cast<double>(item);
-// 
-//     // Rz
-//     std::getline(line_stream, item, ' ');
-//     pose(2, 0) = boost::lexical_cast<double>(item);
-// 
-//     // Tx
-//     std::getline(line_stream, item, ' ');
-//     pose(0, 1) = boost::lexical_cast<double>(item);
-// 
-//     // Ty
-//     std::getline(line_stream, item, ' ');
-//     pose(1, 1) = boost::lexical_cast<double>(item);
-// 
-//     // Tz
-//     std::getline(line_stream, item, ' ');
-//     pose(2, 1) = boost::lexical_cast<double>(item);
-// 
-//     image_poses.emplace(image_name, pose);
-//   }
-// 
-//   return image_poses;
-// }
-
-// IncrementalMapper::Options IncrementalMapperController::Options::Mapper()
-IncrementalMapper::Options IncrementalMapperOptions::Mapper()
-    const {
+IncrementalMapper::Options IncrementalMapperOptions::Mapper() const {
   IncrementalMapper::Options options = mapper;
   options.abs_pose_refine_focal_length = ba_refine_focal_length;
   options.abs_pose_refine_extra_params = ba_refine_extra_params;
@@ -351,11 +288,8 @@ void IncrementalMapperController::Run() {
   }
 
   IncrementalMapper::Options init_mapper_options = options_->Mapper();
+  Reconstruct(init_mapper_options);
 
-/* TODO
-  // The block below was replaced by a single reconstruct call
-  // Reconstruct(init_mapper_options);
-*/
   const size_t kNumInitRelaxations = 2;
   for (size_t i = 0; i < kNumInitRelaxations; ++i) {
     if (reconstruction_manager_->Size() > 0 || IsStopped()) {
@@ -437,21 +371,6 @@ void IncrementalMapperController::Reconstruct(
         reconstruction_manager_->Get(reconstruction_idx);
 
     mapper.BeginReconstruction(&reconstruction);
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Read image pose measurements
-    ////////////////////////////////////////////////////////////////////////////
-
-    if (!options_->image_poses.empty()) {
-      for (const auto& image : reconstruction.Images()) {
-        auto it = options_->image_poses.find(image.second.Name());
-        if (it != options_->image_poses.end()) {
-          class Image& reimage = reconstruction.Image(image.first);
-          reimage.SetTvecPrior(it->second.first);
-          reimage.SetQvecPrior(it->second.second);
-        }
-      }
-    }
 
     ///////////////////////////////////////////////////////////////////////////
     // Register initial pair
@@ -624,7 +543,6 @@ void IncrementalMapperController::Reconstruct(
       if (!reg_next_success && prev_reg_next_success) {
         reg_next_success = true;
         prev_reg_next_success = false;
-        // IterativeGlobalRefinement(*options_, &mapper, true);
         IterativeGlobalRefinement(*options_, &mapper);
       } else {
         prev_reg_next_success = reg_next_success;
@@ -638,13 +556,9 @@ void IncrementalMapperController::Reconstruct(
     }
 
     // Only run final global BA, if last incremental BA was not global.
-    /* TODO
-     * Would normally compute covariance here but this function gets called multiple times
-    */
     if (reconstruction.NumRegImages() >= 2 &&
         reconstruction.NumRegImages() != ba_prev_num_reg_images &&
         reconstruction.NumPoints3D() != ba_prev_num_points) {
-      // IterativeGlobalRefinement(*options_, &mapper, true);
       IterativeGlobalRefinement(*options_, &mapper);
     }
 

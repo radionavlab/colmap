@@ -52,51 +52,38 @@ int main(int argc, char** argv) {
 
   std::string import_path;
   std::string export_path;
-  std::string image_list_path;
   std::string image_pose_path;
 
   OptionManager options;
-  options.AddDatabaseOptions();
-  options.AddImageOptions();
   options.AddRequiredOption("import_path", &import_path);
   options.AddRequiredOption("export_path", &export_path);
   options.AddRequiredOption("image_pose_path", &image_pose_path);
-  options.AddMapperOptions();
+  options.AddBundleAdjustmentOptions();
   options.Parse(argc, argv);
 
-  if (!ExistsDir(export_path)) {
-    std::cerr << "ERROR: `export_path` is not a directory." << std::endl;
-    return EXIT_FAILURE;
-  }
-
-  if (!image_list_path.empty()) {
-    const auto image_names = ReadTextFileLines(image_list_path);
-    options.mapper->image_names =
-        std::set<std::string>(image_names.begin(), image_names.end());
-  }
+  Reconstruction reconstruction;
+  reconstruction.Read(import_path);
 
   /* GAME PLAN
   * 1) Read in the camera measurements
   * 2) Determine the similarity transform
   * 3) Apply the similarity transform to the measurements
   * 4) Insert the measurements into Colmap Image object 
-  * 5) Re-run the mapper with the new cost function
+  * 5) Run global BA
   */
-
-  Reconstruction reconstruction;
-  reconstruction.Read(import_path);
 
   /* 1) Read in the camera measurements */
   std::vector<std::string> image_names;
-  std::vector<Eigen::Vector3d> measured_camera_positions;
-  std::vector<Eigen::Vector3d> measured_camera_orientations;
-  ReadCameraMeasurements(image_pose_path, &image_names, &measured_camera_positions, &measured_camera_orientations);
+  std::vector<Eigen::Vector3d> TvecPriorsGlobal;
+  std::vector<Eigen::Vector3d> QvecPriorsGlobal;
+  ReadCameraMeasurements(image_pose_path, &image_names, &TvecPriorsGlobal, &QvecPriorsGlobal);
 
-  /* 2) Determine the similarity transform */
+  /* 2) Determine the similarity transform between camera locations in visual
+   * frame and camera locations in global frame */
   SimilarityTransform3 tform;
   bool alignment_success = reconstruction.AlignMeasurements(
           image_names,
-          measured_camera_positions,
+          TvecPriorsGlobal,
           3,
           tform);
 
@@ -107,63 +94,40 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
  
-  /* 3) Apply the similarity transform to the measurements */
-  // Copy measurement vectors for transformation
-  std::vector<Eigen::Vector3d> measurement_locations = measured_camera_positions;
-  std::vector<Eigen::Vector4d> measurement_orientations;
+  /* 3) Apply the similarity transform to the priors */
+  std::vector<Eigen::Vector3d> TvecPriorsVisual = TvecPriorsGlobal;
   std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > image_poses;
-  for(size_t i = 0; i < measured_camera_positions.size(); i++) {
-    // Convert Euler angle to quaternion
-    // 3-2-1 euler angles
-    // yaw about body z axis, pitch about body y axis, roll about body x axis
-    const double roll  = measured_camera_orientations[i](0);
-    const double pitch = measured_camera_orientations[i](1);
-    const double yaw   = measured_camera_orientations[i](2);
-    
-    const Eigen::Quaterniond q = Eigen::Quaterniond(
-            Eigen::AngleAxisd(yaw,   Eigen::Vector3d::UnitZ()) * 
-            Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) * 
-            Eigen::AngleAxisd(roll,  Eigen::Vector3d::UnitX()));
-
-    Eigen::Vector4d measurement_orientation(q.w(), q.x(), q.y(), q.z());    
-    measurement_orientations.push_back(measurement_orientation);
+  for(size_t i = 0; i < TvecPriorsVisual.size(); i++) {
 
     // Apply similarity 
-    // The new measurements are in the visual frame.
-    tform.TransformPoint(&measurement_locations[i]);
-    tform.TransformQuaternion(&measurement_orientations[i]);
-
-    // Rotate the measurements to the camera frame. This aligns the QvecPriors
-    // with Qvec, and the TvecPriors with Tvec
-    // -1*QuaternionRotatePoint(QvecPrior, TvecPrior);
+    tform.TransformPoint(&TvecPriorsVisual[i]);
+    // TODO assuming no angle priors
+    // tform.TransformQuaternion(&measurement_orientations[i]);
      
     // Add transformed measurement to set
     image_poses.insert({
                 image_names[i], 
-                std::make_pair(measurement_locations[i], measurement_orientations[i])
+                std::make_pair(TvecPriorsVisual[i], Eigen::Vector4d(0,0,0,0))
     });
   }
 
-  // 4) Insert the measurements into reconstruction
-  // options.mapper->image_poses = image_poses;
+  /* 4) Insert the measurements into reconstruction */
   reconstruction.AddPriors(image_poses);
 
-  // 5) Re-run the mapper with the new cost function
+  /* 5) Run global BA */
+  options.bundle_adjustment->compute_covariance = false;
+  options.bundle_adjustment->normalize = false;
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
   ba_controller.Wait();
 
-  // 6) Apply inverse similarity transform to the model
+  /* 6) Apply inverse similarity transform to the model */
   SimilarityTransform3 tformInverse = tform.Inverse();
   reconstruction.ReAlign(tformInverse);
-
-  // In case the reconstruction is continued from an existing reconstruction, do
-  // not create sub-folders but directly write the results.
-  // if(import_path != "" && reconstruction_manager.Size() > 0) {
-  //   reconstruction_manager.Get(0).Write(export_path);
-  // }
-  
+ 
   // reconstruction.Write(export_path);
+  reconstruction.WriteText(export_path);
+  std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;
 }

@@ -27,7 +27,6 @@ int main(int argc, char** argv) {
   std::string import_path;
   std::string export_path;
   std::string image_list_path;
-  std::string image_pose_path;
 
   OptionManager options;
   options.AddDatabaseOptions();
