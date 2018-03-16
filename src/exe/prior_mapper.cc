@@ -75,8 +75,23 @@ int main(int argc, char** argv) {
   /* 1) Read in the camera measurements */
   std::vector<std::string> image_names;
   std::vector<Eigen::Vector3d> TvecPriorsGlobal;
-  std::vector<Eigen::Vector3d> QvecPriorsGlobal;
-  ReadCameraMeasurements(image_pose_path, &image_names, &TvecPriorsGlobal, &QvecPriorsGlobal);
+  std::vector<Eigen::Vector3d> EvecPriorsGlobal;
+  ReadCameraMeasurements(image_pose_path, &image_names, &TvecPriorsGlobal, &EvecPriorsGlobal);
+
+  /* 1.1) Convert 3-2-1 Euler angle rotation of camera away from ENU to quaternion */
+  std::vector<Eigen::Vector4d> QvecPriorsGlobal;
+  std::for_each(
+    EvecPriorsGlobal.begin(), 
+    EvecPriorsGlobal.end(),
+    [&](const Eigen::Vector3d e){ 
+      QvecPriorsGlobal.push_back(
+        RotationMatrixToQuaternion(
+            EulerAnglesToRotationMatrix(e(0), e(1), e(2))
+        )
+      );
+    }
+  );
+
 
   /* 2) Determine the similarity transform between camera locations in visual
    * frame and camera locations in global frame */
@@ -96,18 +111,18 @@ int main(int argc, char** argv) {
  
   /* 3) Apply the similarity transform to the priors */
   std::vector<Eigen::Vector3d> TvecPriorsVisual = TvecPriorsGlobal;
+  std::vector<Eigen::Vector4d> QvecPriorsVisual = QvecPriorsGlobal;
   std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > image_poses;
   for(size_t i = 0; i < TvecPriorsVisual.size(); i++) {
 
     // Apply similarity 
     tform.TransformPoint(&TvecPriorsVisual[i]);
-    // TODO assuming no angle priors
-    // tform.TransformQuaternion(&measurement_orientations[i]);
+    tform.TransformQuaternion(&QvecPriorsVisual[i]);
      
     // Add transformed measurement to set
     image_poses.insert({
                 image_names[i], 
-                std::make_pair(TvecPriorsVisual[i], Eigen::Vector4d(0,0,0,0))
+                std::make_pair(TvecPriorsVisual[i], QvecPriorsVisual[i])
     });
   }
 
@@ -115,7 +130,7 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_poses);
 
   /* 5) Run global BA */
-  options.bundle_adjustment->compute_covariance = false;
+  options.bundle_adjustment->compute_covariance = true;
   options.bundle_adjustment->normalize = false;
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
@@ -126,7 +141,7 @@ int main(int argc, char** argv) {
   reconstruction.ReAlign(tformInverse);
  
   // reconstruction.Write(export_path);
-  reconstruction.WriteText(export_path);
+  // reconstruction.WriteText(export_path);
   std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;

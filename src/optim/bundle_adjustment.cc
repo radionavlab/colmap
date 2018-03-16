@@ -321,6 +321,30 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     }
   }
 
+//  if (options_.compute_covariance) {
+//    PrintHeading1("Computing covariance...");
+//    for (const auto& point3D : reconstruction->Points3D()) {
+//      // Compute covariance matrix of each 3D point
+//      ceres::Covariance::Options covariance_options;
+//      covariance_options.num_threads = solver_options.num_threads;
+//      ceres::Covariance covariance(covariance_options);
+//
+//      std::vector< std::pair<const double*, const double*> > covariance_blocks;
+//      const double* data = point3D.second.XYZ().data();
+//      if (problem_->HasParameterBlock(data)) {
+//        covariance_blocks.emplace_back(data, data);
+//        CHECK(covariance.Compute(covariance_blocks, problem_.get()));
+//
+//        // The matrix returned by Ceres is row-major so we must create a special 
+//        // container for it. Eigen handles the conversion from row-major to 
+//        // column-major automatically when SetCovariance() is called
+//        Eigen::Matrix<double, 3, 3, Eigen::RowMajor> P;
+//        covariance.GetCovarianceBlock(data, data, P.data());
+//        reconstruction->Point3D(point3D.first).SetCovariance(P);
+//      }
+//    }
+//  }
+
   TearDown(reconstruction);
 
   return true;
@@ -368,8 +392,9 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   // Collect cameras for final parameterization.
   CHECK(image.HasCamera());
 
-  // if (image.HasTvecPrior() && image.HasQvecPrior()) {
-  if (image.HasTvecPrior()) {
+  const bool using_priors = image.HasTvecPrior() && image.HasQvecPrior();
+
+  if (using_priors) {
     problem_->AddResidualBlock(
         CameraPoseCostFunction::Create(image.QvecPrior(), image.TvecPrior()),
         NULL, qvec_data, tvec_data);
@@ -392,7 +417,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 
     ceres::CostFunction* cost_function = nullptr;
 
-    if (constant_pose) {
+    if (constant_pose && !using_priors) {
       switch (camera.ModelId()) {
 #define CAMERA_MODEL_CASE(CameraModel)                                 \
   case CameraModel::kModelId:                                          \
@@ -429,9 +454,15 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 
   if (num_observations > 0) {
     camera_ids_.insert(image.CameraId());
-
+     
     // Set pose parameterization.
-    if (!constant_pose) {
+    // If using priors, all poses can be changed. Parameterize all quaternions.
+    if (using_priors) {
+      ceres::LocalParameterization* quaternion_parameterization =
+          new ceres::QuaternionParameterization;
+      problem_->SetParameterization(qvec_data, quaternion_parameterization);
+    }
+    else if (!constant_pose) {
       ceres::LocalParameterization* quaternion_parameterization =
           new ceres::QuaternionParameterization;
       problem_->SetParameterization(qvec_data, quaternion_parameterization);

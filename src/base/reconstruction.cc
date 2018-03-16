@@ -654,6 +654,8 @@ bool Reconstruction::ReAlign(const SimilarityTransform3& tform) {
 
   for (auto& point3D : points3D_) {
     tform.TransformPoint(&point3D.second.XYZ());
+    tform.TransformCovariance(&point3D.second.Covariance());
+    std::cout << point3D.second.Covariance().diagonal().transpose() << std::endl;
   }
 
   for (auto& image : images_) {
