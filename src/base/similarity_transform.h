@@ -48,7 +48,6 @@ class SimilarityTransform3 {
   SimilarityTransform3 Inverse() const;
 
   void TransformPoint(Eigen::Vector3d* xyz) const;
-  void TransformQuaternion(Eigen::Vector4d* xyz) const;
   void TransformPose(Eigen::Vector4d* qvec, Eigen::Vector3d* tvec) const;
   void TransformCovariance(Eigen::Matrix3d* cov) const;
 

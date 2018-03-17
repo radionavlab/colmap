@@ -58,13 +58,6 @@ void SimilarityTransform3::TransformPoint(Eigen::Vector3d* xyz) const {
   *xyz = transform_ * *xyz;
 }
 
-void SimilarityTransform3::TransformQuaternion(Eigen::Vector4d* qvec) const {
-    *qvec = RotationMatrixToQuaternion(
-                transform_.matrix().topLeftCorner<3,3>() * 
-                QuaternionToRotationMatrix(*qvec) / Scale()
-            );
-}
-
 void SimilarityTransform3::TransformCovariance(Eigen::Matrix3d* cov) const {
     *cov = transform_.matrix().topLeftCorner<3,3>() 
             * (*cov) 

@@ -47,61 +47,18 @@ class CameraPoseCostFunction {
   template <typename T>
   bool operator()(const T* const qvec, const T* const tvec, 
                   T* residuals) const {
+
+    // Measurements and estimates are all in camera frame
+    const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
+    const T qvec_meas[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
     
-    // Measurements describe the translation of the camera away from the visual
-    // origin as expressed in the visual frame followed by a rotation away from
-    // the visual frame.
-    const T tvec_meas_visual[3] = {T(tx_), T(ty_), T(tz_)};
-    const T qvec_meas_visual[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
-
-    // Measurements are in visual frame
-    // Data are in camera frame
-    // Rotate the data to the visual frame
-    // Multiply the negative distance by the inverse quaternion
-    T tvec_visual[3];
-    const T tvec_camera_neg[3] = {-tvec[0], -tvec[1], -tvec[2]};
-    const T qvec_camera_inv[4] = {qvec[0], -qvec[1], -qvec[2], -qvec[3]};
-    ceres::QuaternionRotatePoint(qvec_camera_inv, tvec_camera_neg, tvec_visual);
-
-    // Conjugate measurement quaternion to calculate error
-    const T qvec_meas_visual_conj[4] = {
-         qvec_meas_visual[0], 
-        -qvec_meas_visual[1], 
-        -qvec_meas_visual[2], 
-        -qvec_meas_visual[3]
-    };
-
-    // Rotation of camera away from visual frame is the inverse or rotation of
-    // visual frame away from camera 
-    const T qvec_visual[4] = {
-         qvec[0], 
-        -qvec[1], 
-        -qvec[2], 
-        -qvec[3]
-    };
-
-    // Calculate quaternion error
-    T dq[4];
-    ceres::QuaternionProduct(qvec_visual, qvec_meas_visual_conj, dq);
-
-    // Normalize quaternion error
-    const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
-    dq[0] /= norm;
-    dq[1] /= norm;
-    dq[2] /= norm;
-    dq[3] /= norm;
-
-
-    // Convert quaternion error to axis-angle representation
-    ceres::QuaternionToAngleAxis(dq, residuals); 
-
     residuals[0] = T(0);
     residuals[1] = T(0);
     residuals[2] = T(0);
     
-    residuals[3] = tvec_visual[0] - tvec_meas_visual[0];
-    residuals[4] = tvec_visual[1] - tvec_meas_visual[1];
-    residuals[5] = tvec_visual[2] - tvec_meas_visual[2];
+    residuals[3] = tvec[0] - tvec_meas[0];
+    residuals[4] = tvec[1] - tvec_meas[1];
+    residuals[5] = tvec[2] - tvec_meas[2];
 
     return true;
   }
@@ -115,6 +72,98 @@ class CameraPoseCostFunction {
   const double ty_;
   const double tz_;
 };
+
+// // Cost function to estimate camera pose given a measurement of its pose
+// class CameraPoseCostFunction {
+//  public:
+//   CameraPoseCostFunction(const Eigen::Vector4d& qvec,
+//                          const Eigen::Vector3d& tvec)
+//       : qw_(qvec(0)),
+//         qx_(qvec(1)),
+//         qy_(qvec(2)),
+//         qz_(qvec(3)),
+//         tx_(tvec(0)),
+//         ty_(tvec(1)),
+//         tz_(tvec(2)) {}
+// 
+//   static ceres::CostFunction* Create(const Eigen::Vector4d& qvec,
+//                                      const Eigen::Vector3d& tvec) {
+//     return (new ceres::AutoDiffCostFunction<
+//             CameraPoseCostFunction, 6, 4, 3>(
+//         new CameraPoseCostFunction(qvec, tvec)));
+//   }
+// 
+//   template <typename T>
+//   bool operator()(const T* const qvec, const T* const tvec, 
+//                   T* residuals) const {
+//     
+//     // Measurements describe the translation of the camera away from the visual
+//     // origin as expressed in the visual frame followed by a rotation away from
+//     // the visual frame.
+//     const T tvec_meas_visual[3] = {T(tx_), T(ty_), T(tz_)};
+//     const T qvec_meas_visual[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
+// 
+//     // Measurements are in visual frame
+//     // Data are in camera frame
+//     // Rotate the data to the visual frame
+//     // Multiply the negative distance by the inverse quaternion
+//     T tvec_visual[3];
+//     const T tvec_camera_neg[3] = {-tvec[0], -tvec[1], -tvec[2]};
+//     const T qvec_camera_inv[4] = {qvec[0], -qvec[1], -qvec[2], -qvec[3]};
+//     ceres::QuaternionRotatePoint(qvec_camera_inv, tvec_camera_neg, tvec_visual);
+// 
+//     // Conjugate measurement quaternion to calculate error
+//     const T qvec_meas_visual_conj[4] = {
+//          qvec_meas_visual[0], 
+//         -qvec_meas_visual[1], 
+//         -qvec_meas_visual[2], 
+//         -qvec_meas_visual[3]
+//     };
+// 
+//     // Rotation of camera away from visual frame is the inverse or rotation of
+//     // visual frame away from camera 
+//     const T qvec_visual[4] = {
+//          qvec[0], 
+//         -qvec[1], 
+//         -qvec[2], 
+//         -qvec[3]
+//     };
+// 
+//     // Calculate quaternion error
+//     T dq[4];
+//     ceres::QuaternionProduct(qvec_visual, qvec_meas_visual_conj, dq);
+// 
+//     // Normalize quaternion error
+//     const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
+//     dq[0] /= norm;
+//     dq[1] /= norm;
+//     dq[2] /= norm;
+//     dq[3] /= norm;
+// 
+// 
+//     // Convert quaternion error to axis-angle representation
+//     ceres::QuaternionToAngleAxis(dq, residuals); 
+// 
+//     residuals[0] = T(0);
+//     residuals[1] = T(0);
+//     residuals[2] = T(0);
+//     
+//     residuals[3] = tvec_visual[0] - tvec_meas_visual[0];
+//     residuals[4] = tvec_visual[1] - tvec_meas_visual[1];
+//     residuals[5] = tvec_visual[2] - tvec_meas_visual[2];
+// 
+//     return true;
+//   }
+// 
+//  private:
+//   const double qw_;
+//   const double qx_;
+//   const double qy_;
+//   const double qz_;
+//   const double tx_;
+//   const double ty_;
+//   const double tz_;
+// };
 
 // Standard bundle adjustment cost function for variable
 // camera pose and calibration and point parameters.
