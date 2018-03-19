@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_poses);
 
   /* 5) Run global BA */
-  options.bundle_adjustment->compute_covariance = true;
+  options.bundle_adjustment->compute_covariance = false;
   options.bundle_adjustment->normalize = false;
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
