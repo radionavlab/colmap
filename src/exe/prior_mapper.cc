@@ -106,21 +106,35 @@ int main(int argc, char** argv) {
   for(size_t i = 0; i < TvecPriorsVisual.size(); i++) {
 
     // Apply similarity transform
-    // Transform camera position from global to visual
+    // Transform camera position from ECEF frame to visual frame
     tform.TransformPoint(&TvecPriorsVisual[i]);
 
     // Transform camera orientation
-    // Express camera frame unit vectors in global frame
-    Eigen::Vector3d gx = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitX()) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gy = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitY()) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gz = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitZ()) + TvecPriorsGlobal[i]; 
+    // Unit vectors of camera frame
+    const Eigen::Vector3d cx = Eigen::Vector3d::UnitX();
+    const Eigen::Vector3d cy = Eigen::Vector3d::UnitY();
+    const Eigen::Vector3d cz = Eigen::Vector3d::UnitZ();
 
-    // Transform to visual frame
+    // Camera unit vectors expressed in body frame 
+    // Important note: Camera frame has z along focal axis, x to the right, and
+    // y down like computer graphics
+    const Eigen::Vector4d cq = RotationMatrixToQuaternion(EulerAnglesToRotationMatrix(-M_PI/2, 0, -M_PI/2));
+    const Eigen::Vector3d bx = QuaternionRotatePoint(cq, cx);
+    const Eigen::Vector3d by = QuaternionRotatePoint(cq, cy);
+    const Eigen::Vector3d bz = QuaternionRotatePoint(cq, cz);
+
+    // Camera vectors expressed in ECEF frame
+    // No longer unit
+    Eigen::Vector3d gx = QuaternionRotatePoint(QvecPriorsGlobal[i], bx) + TvecPriorsGlobal[i]; 
+    Eigen::Vector3d gy = QuaternionRotatePoint(QvecPriorsGlobal[i], by) + TvecPriorsGlobal[i]; 
+    Eigen::Vector3d gz = QuaternionRotatePoint(QvecPriorsGlobal[i], bz) + TvecPriorsGlobal[i]; 
+
+    // Camera vectors expressed in visual frame with respect to visual origin
     tform.TransformPoint(&gx);
     tform.TransformPoint(&gy);
     tform.TransformPoint(&gz);
 
-    // Subtract camera position leaving just the rotation
+    // Camera vectors with respect to camera origin
     gx = gx - TvecPriorsVisual[i];
     gy = gy - TvecPriorsVisual[i];
     gz = gz - TvecPriorsVisual[i];
@@ -130,9 +144,9 @@ int main(int argc, char** argv) {
     gy = gy.normalized();
     gz = gz.normalized();
 
-    // Stack vectors in a rotation matrix and cast them as a quaternion
+    // Stack vectors in a rotation matrix and cast them as a quaternion 
     const Eigen::Quaterniond q((Eigen::Matrix3d() << gx, gy, gz).finished());
-    QvecPriorsVisual[i] = Eigen::Vector4d(q.w(), q.x(), q.y(), q.z());
+    QvecPriorsVisual[i] = Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()); 
 
     // Tranform priors from visual to camera frame
     TvecPriorsCamera[i] = QuaternionRotatePoint(InvertQuaternion(QvecPriorsVisual[i]), -1*TvecPriorsVisual[i]); 
@@ -149,8 +163,9 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_poses);
 
   /* 5) Run global BA */
-  options.bundle_adjustment->compute_covariance = false;
+  options.bundle_adjustment->compute_covariance = true;
   options.bundle_adjustment->normalize = false;
+  options.bundle_adjustment->solver_options.max_num_iterations = 1000;
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
   ba_controller.Wait();
@@ -160,7 +175,7 @@ int main(int argc, char** argv) {
   reconstruction.ReAlign(tformInverse);
  
   // reconstruction.Write(export_path);
-  // reconstruction.WriteText(export_path);
+  reconstruction.WriteText(export_path);
   std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;

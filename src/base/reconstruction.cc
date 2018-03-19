@@ -655,7 +655,7 @@ bool Reconstruction::ReAlign(const SimilarityTransform3& tform) {
   for (auto& point3D : points3D_) {
     tform.TransformPoint(&point3D.second.XYZ());
     tform.TransformCovariance(&point3D.second.Covariance());
-    // std::cout << point3D.second.Covariance().diagonal().transpose() << std::endl;
+    std::cout << point3D.second.Covariance().diagonal().transpose() << std::endl;
   }
 
   for (auto& image : images_) {
@@ -670,14 +670,6 @@ void Reconstruction::AddPriors(const std::unordered_map< std::string, std::pair<
         auto it = priors.find(image.second.Name()); 
         if (it != priors.end()) { 
             class Image& reimage = this->Image(image.first);
-
-            std::cout << reimage.Tvec().transpose() << std::endl;
-            std::cout << it->second.first.transpose() << std::endl;
-            std::cout << reimage.Tvec().norm() << std::endl;
-            std::cout << it->second.first.norm() << std::endl;
-            std::cout << std::fabs(reimage.Tvec().norm() - it->second.first.norm()) << std::endl;
-            std::cout << std::endl;
-
             reimage.SetTvecPrior(it->second.first);
             reimage.SetQvecPrior(it->second.second);
         }
