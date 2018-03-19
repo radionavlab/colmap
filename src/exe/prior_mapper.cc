@@ -110,16 +110,10 @@ int main(int argc, char** argv) {
     tform.TransformPoint(&TvecPriorsVisual[i]);
 
     // Transform camera orientation
-    // Unit vectors of camera frame
-    const Eigen::Vector3d cx =  Eigen::Vector3d::UnitX();
-    const Eigen::Vector3d cy =  Eigen::Vector3d::UnitY();
-    const Eigen::Vector3d cz =  Eigen::Vector3d::UnitZ();
-
-    // Camera vectors expressed in global frame
-    // No longer unit
-    Eigen::Vector3d gx = QuaternionRotatePoint(QvecPriorsGlobal[i], cx) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gy = QuaternionRotatePoint(QvecPriorsGlobal[i], cy) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gz = QuaternionRotatePoint(QvecPriorsGlobal[i], cz) + TvecPriorsGlobal[i]; 
+    // Express camera frame unit vectors in global frame
+    Eigen::Vector3d gx = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitX()) + TvecPriorsGlobal[i]; 
+    Eigen::Vector3d gy = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitY()) + TvecPriorsGlobal[i]; 
+    Eigen::Vector3d gz = QuaternionRotatePoint(QvecPriorsGlobal[i], Eigen::Vector3d::UnitZ()) + TvecPriorsGlobal[i]; 
 
     // Transform to visual frame
     tform.TransformPoint(&gx);

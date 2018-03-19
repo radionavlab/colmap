@@ -673,6 +673,9 @@ void Reconstruction::AddPriors(const std::unordered_map< std::string, std::pair<
 
             std::cout << reimage.Tvec().transpose() << std::endl;
             std::cout << it->second.first.transpose() << std::endl;
+            std::cout << reimage.Tvec().norm() << std::endl;
+            std::cout << it->second.first.norm() << std::endl;
+            std::cout << std::fabs(reimage.Tvec().norm() - it->second.first.norm()) << std::endl;
             std::cout << std::endl;
 
             reimage.SetTvecPrior(it->second.first);
