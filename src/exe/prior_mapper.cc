@@ -175,8 +175,51 @@ int main(int argc, char** argv) {
   reconstruction.ReAlign(tformInverse);
  
   // reconstruction.Write(export_path);
-  reconstruction.WriteText(export_path);
-  std::cout << "Success!" << std::endl;
+  // reconstruction.WriteText(export_path);
+  
+  /* 
+   * Game Plan 
+   * 1) Iterate through all the 3D points and extract those that are within the ROI
+   * 2) Iterate through all of the extra images and score them
+   * 3) Select the image with the greatest score
+   * 4) Add image to problem. Use priors as initial estimate
+   * 5) Run bundle adjustment
+   * 6) Evaluate constraints
+   * 7) GOTO 2
+   */
+
+    const Eigen::Vector3d centerECEF(-742015.201696, -5462219.446174, 3198014.314080);
+    const Eigen::Vector3d upperECEF = centerECEF + Eigen::Vector3d(2,2,2); 
+    const Eigen::Vector3d lowerECEF = centerECEF + Eigen::Vector3d(-2,-2,-2); 
+    
+    /* 1) Filter points out that are not within the ROI */
+    const auto points3D = FilterPointsROI(reconstruction.Points3D());
+
+    /* 2) Score candidate images */
+    const auto candidateImages = getCandidateImages();
+
+    auto scoreImage = [&](img& img, const point p) -> double {};
+    for(img& img : candidateImages) {
+        for(point p : points3D) {
+            img.score += scoreImage(img, p);
+        }
+    }
+
+    /* 3) Select image with the greatest score */
+    auto img_compare = [&](const img& a, const img& b) -> bool {a.score > b.score};
+    const img img = std::max_element(img.begin(), img.end(), img_compare);
+
+    /* 4) Add image to problem */
+
+    /* 5) Run BA */
+
+    /* 6) Evaluate constraints */
+
+    /* 7) GOTO 2 */
+    
+
+
+  
 
   return EXIT_SUCCESS;
 }
