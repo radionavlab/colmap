@@ -25,26 +25,46 @@ using namespace colmap;
 
 void ReadCameraMeasurements(const std::string& path,
                          std::vector<std::string>* image_names,
-                         std::vector<Eigen::Vector3d>* measured_camera_positions,
-                         std::vector<Eigen::Vector4d>* measured_camera_orientations) {
+                         std::vector<Eigen::Vector3d>* TvecPriorsGlobal,
+                         std::vector<Eigen::Vector3d>* TvecPriorsCamera,
+                         std::vector<Eigen::Vector3d>* EvecPriorsCamera,
+                         std::vector< Eigen::Matrix<double, 6, 6> >* PriorsCovariance) {
   std::vector<std::string> lines = ReadTextFileLines(path);
   for (const auto line : lines) {
     std::stringstream line_parser(line);
+
+    // Buffers to store data in
     std::string image_name = "";
-    Eigen::Vector3d camera_position;
-    Eigen::Vector4d camera_orientation;
+    Eigen::Vector3d TvecPriorGlobal;
+    Eigen::Vector3d TvecPriorCamera;
+    Eigen::Vector3d EvecPriorCamera;
+    Eigen::Matrix<double, 6, 6> PriorCovariance;
+
+    // Read data into buffers
     line_parser >> 
         image_name >> 
-        camera_position(0) >> 
-        camera_position(1) >> 
-        camera_position(2) >> 
-        camera_orientation(0) >>
-        camera_orientation(1) >>
-        camera_orientation(2) >>
-        camera_orientation(3);
+        TvecPriorGlobal(0) >> 
+        TvecPriorGlobal(1) >> 
+        TvecPriorGlobal(2) >> 
+        TvecPriorCamera(0) >>
+        TvecPriorCamera(1) >>
+        TvecPriorCamera(2) >>
+        EvecPriorCamera(0) >>
+        EvecPriorCamera(1) >>
+        EvecPriorCamera(2);
+
+    for(int i = 0; i < 6; i++) {
+        for(int j = 0; j < 6; j++) {
+            line_parser >> PriorCovariance(j, i);
+        }
+    }
+
+    // Push data into vectors
     image_names->push_back(image_name);
-    measured_camera_positions->push_back(camera_position);
-    measured_camera_orientations->push_back(camera_orientation);
+    TvecPriorsGlobal->push_back(TvecPriorGlobal);
+    TvecPriorsCamera->push_back(TvecPriorCamera);
+    EvecPriorsCamera->push_back(EvecPriorCamera);
+    PriorsCovariance->push_back(PriorCovariance);
   }
 }
 
@@ -66,27 +86,31 @@ int main(int argc, char** argv) {
   reconstruction.Read(import_path);
 
   /* GAME PLAN
-  * 1) Read in the camera measurements
-  * 2) Determine the similarity transform
-  * 3) Apply the similarity transform to the measurements
-  * 4) Insert the measurements into Colmap Image object 
-  * 5) Run global BA
+  * 1) Read in the measurements
+  * 2) Apply similarity transform to data. Bring reconstruction into global frame.
+  * 3) Insert the measurements into Colmap
+  * 4) Run global BA
   */
 
   /* 1) Read in the camera measurements */
   std::vector<std::string> image_names;
   std::vector<Eigen::Vector3d> TvecPriorsGlobal;
-  std::vector<Eigen::Vector4d> QvecPriorsGlobal;
-  ReadCameraMeasurements(image_pose_path, &image_names, &TvecPriorsGlobal, &QvecPriorsGlobal);
+  std::vector<Eigen::Vector3d> TvecPriorsCamera;
+  std::vector<Eigen::Vector3d> EvecPriorsCamera;
+  std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovariance;
+  ReadCameraMeasurements(
+          image_pose_path, 
+          &image_names, 
+          &TvecPriorsGlobal, 
+          &TvecPriorsCamera, 
+          &EvecPriorsCamera, 
+          &PriorsCovariance);
 
-  /* 2) Determine the similarity transform between camera locations in visual
-   * frame and camera locations in global frame */
-  SimilarityTransform3 tform;
-  bool alignment_success = reconstruction.AlignMeasurements(
+  /* 2) Align reconstruction with ECEF measurements to bring it into global frame. */
+  bool alignment_success = reconstruction.Align(
           image_names,
           TvecPriorsGlobal,
-          3,
-          tform);
+          3);
 
   if (alignment_success) {
     std::cout << " => Alignment succeeded" << std::endl;
@@ -95,87 +119,36 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
  
-  /* 3) Apply the similarity transform to the priors */
-  std::vector<Eigen::Vector3d> TvecPriorsVisual = TvecPriorsGlobal;
-  std::vector<Eigen::Vector4d> QvecPriorsVisual = QvecPriorsGlobal;
 
-  std::vector<Eigen::Vector3d> TvecPriorsCamera = TvecPriorsGlobal;
-  std::vector<Eigen::Vector4d> QvecPriorsCamera = QvecPriorsGlobal;
+  /* 3) Insert the measurements into reconstruction */
+  std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > image_priors;
+  for(size_t i = 0; i < TvecPriorsCamera.size(); i++) {
+    // Transform 3-2-1 euler angle to quaternion
+    const Eigen::Vector4d QvecPriorCamera = 
+        RotationMatrixToQuaternion(
+                EulerAnglesToRotationMatrix(
+                    EvecPriorsCamera[i](0), 
+                    EvecPriorsCamera[i](1), 
+                    EvecPriorsCamera[i](2)));
 
-  std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > image_poses;
-  for(size_t i = 0; i < TvecPriorsVisual.size(); i++) {
-
-    // Apply similarity transform
-    // Transform camera position from ECEF frame to visual frame
-    tform.TransformPoint(&TvecPriorsVisual[i]);
-
-    // Transform camera orientation
-    // Unit vectors of camera frame
-    const Eigen::Vector3d cx = Eigen::Vector3d::UnitX();
-    const Eigen::Vector3d cy = Eigen::Vector3d::UnitY();
-    const Eigen::Vector3d cz = Eigen::Vector3d::UnitZ();
-
-    // Camera unit vectors expressed in body frame 
-    // Important note: Camera frame has z along focal axis, x to the right, and
-    // y down like computer graphics
-    const Eigen::Vector4d cq = RotationMatrixToQuaternion(EulerAnglesToRotationMatrix(-M_PI/2, 0, -M_PI/2));
-    const Eigen::Vector3d bx = QuaternionRotatePoint(cq, cx);
-    const Eigen::Vector3d by = QuaternionRotatePoint(cq, cy);
-    const Eigen::Vector3d bz = QuaternionRotatePoint(cq, cz);
-
-    // Camera vectors expressed in ECEF frame
-    // No longer unit
-    Eigen::Vector3d gx = QuaternionRotatePoint(QvecPriorsGlobal[i], bx) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gy = QuaternionRotatePoint(QvecPriorsGlobal[i], by) + TvecPriorsGlobal[i]; 
-    Eigen::Vector3d gz = QuaternionRotatePoint(QvecPriorsGlobal[i], bz) + TvecPriorsGlobal[i]; 
-
-    // Camera vectors expressed in visual frame with respect to visual origin
-    tform.TransformPoint(&gx);
-    tform.TransformPoint(&gy);
-    tform.TransformPoint(&gz);
-
-    // Camera vectors with respect to camera origin
-    gx = gx - TvecPriorsVisual[i];
-    gy = gy - TvecPriorsVisual[i];
-    gz = gz - TvecPriorsVisual[i];
-
-    // Normalize. Camera vectors have been scaled by similarity transform
-    gx = gx.normalized();
-    gy = gy.normalized();
-    gz = gz.normalized();
-
-    // Stack vectors in a rotation matrix and cast them as a quaternion 
-    const Eigen::Quaterniond q((Eigen::Matrix3d() << gx, gy, gz).finished());
-    QvecPriorsVisual[i] = Eigen::Vector4d(q.w(), q.x(), q.y(), q.z()); 
-
-    // Tranform priors from visual to camera frame
-    TvecPriorsCamera[i] = QuaternionRotatePoint(InvertQuaternion(QvecPriorsVisual[i]), -1*TvecPriorsVisual[i]); 
-    QvecPriorsCamera[i] = InvertQuaternion(QvecPriorsVisual[i]);
-     
-    // Insert camera priors
-    image_poses.insert({
+    image_priors.insert({
                 image_names[i], 
-                std::make_pair(TvecPriorsCamera[i], QvecPriorsCamera[i])
+                std::make_tuple(TvecPriorsCamera[i], QvecPriorCamera, PriorsCovariance[i])
     });
   }
 
-  /* 4) Insert the measurements into reconstruction */
-  reconstruction.AddPriors(image_poses);
+  reconstruction.AddPriors(image_priors);
 
-  /* 5) Run global BA */
+  /* 4) Run global BA */
   options.bundle_adjustment->compute_covariance = false;
   options.bundle_adjustment->normalize = false;
   options.bundle_adjustment->solver_options.max_num_iterations = 1000;
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
   ba_controller.Wait();
-
-  /* 6) Apply inverse similarity transform to the model */
-  SimilarityTransform3 tformInverse = tform.Inverse();
-  reconstruction.ReAlign(tformInverse);
  
   // reconstruction.Write(export_path);
-  reconstruction.WriteText(export_path);
+  // reconstruction.WriteText(export_path);
   std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;
