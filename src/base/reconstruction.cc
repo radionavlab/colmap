@@ -601,77 +601,14 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
   return true;
 }
 
-// Composes similarity transform that aligns TvecPriors given in the global
-// frame with Tvec given in the visual frame
-bool Reconstruction::AlignMeasurements(const std::vector<std::string>& image_names,
-                                       const std::vector<Eigen::Vector3d>& TvecPriors,
-                                       const int min_common_images,
-                                       SimilarityTransform3& tform) {
-  CHECK_GE(min_common_images, 3);
-  CHECK_EQ(image_names.size(), TvecPriors.size());
-
-  // Find out which images are contained in the reconstruction and get the
-  // positions of their camera centers.
-  std::set<image_t> common_image_ids;
-  std::vector<Eigen::Vector3d> src;
-  std::vector<Eigen::Vector3d> dst;
-  for (size_t i = 0; i < image_names.size(); ++i) {
-    const class Image* image = FindImageWithName(image_names[i]);
-    if (image == nullptr) {
-      continue;
-    }
-
-    if (!IsImageRegistered(image->ImageId())) {
-      continue;
-    }
-
-    // Ignore duplicate images.
-    if (common_image_ids.count(image->ImageId()) > 0) {
-      continue;
-    }
-
-    common_image_ids.insert(image->ImageId());
-
-    // src is the measured location of the image
-    src.push_back(TvecPriors[i]);
-
-    // dst is the estimated location of the image
-    dst.push_back(image->ProjectionCenter());
-  }
-
-  // Only compute the alignment if there are enough correspondences.
-  if (common_image_ids.size() < static_cast<size_t>(min_common_images)) {
-    return false;
-  }
-
-  // Estimate the similarity transformation between the two reconstructions.
-  tform.Estimate(src, dst);
-
-  return true;
-}
-
-bool Reconstruction::ReAlign(const SimilarityTransform3& tform) {
-
-  for (auto& point3D : points3D_) {
-    tform.TransformPoint(&point3D.second.XYZ());
-    tform.TransformCovariance(&point3D.second.Covariance());
-    std::cout << point3D.second.XYZ().transpose() << std::endl;
-  }
-
-  for (auto& image : images_) {
-    tform.TransformPose(&image.second.Qvec(), &image.second.Tvec());
-  }
-
-  return true;
-}
-
-void Reconstruction::AddPriors(const std::unordered_map< std::string, std::pair<Eigen::Vector3d, Eigen::Vector4d> > priors) {
+void Reconstruction::AddPriors(const std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > priors) {
     for (const auto& image : this->Images()) { 
         auto it = priors.find(image.second.Name()); 
         if (it != priors.end()) { 
             class Image& reimage = this->Image(image.first);
-            reimage.SetTvecPrior(it->second.first);
-            reimage.SetQvecPrior(it->second.second);
+            reimage.SetTvecPrior(std::get<0>(it->second));
+            reimage.SetQvecPrior(std::get<1>(it->second));
+            reimage.SetCovariancePrior(std::get<2>(it->second));
         }
     }
 

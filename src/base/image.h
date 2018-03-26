@@ -126,6 +126,12 @@ class Image {
   inline bool HasTvecPrior() const;
   inline void SetTvecPrior(const Eigen::Vector3d& tvec);
 
+  // Covariance prior. 6x6 matrix covariance for 3 position, 3 3-2-1 euler angles
+  inline const Eigen::Matrix<double, 6, 6>& CovariancePrior() const;
+  inline Eigen::Matrix<double, 6, 6>& CovariancePrior();
+  inline bool HasCovariancePrior() const;
+  inline void SetCovariancePrior(const Eigen::Matrix<double, 6, 6>& prior);
+
   // Access the coordinates of image points.
   inline const class Point2D& Point2D(const point2D_t point2D_idx) const;
   inline class Point2D& Point2D(const point2D_t point2D_idx);
@@ -217,6 +223,7 @@ class Image {
   // The pose prior of the image, e.g. extracted from EXIF tags.
   Eigen::Vector4d qvec_prior_;
   Eigen::Vector3d tvec_prior_;
+  Eigen::Matrix<double, 6, 6> cov_prior_;
 
   // All image points, including points that are not part of a 3D point track.
   std::vector<class Point2D> points2D_;
@@ -331,6 +338,14 @@ inline bool Image::HasTvecPrior() const {
 }
 
 void Image::SetTvecPrior(const Eigen::Vector3d& tvec) { tvec_prior_ = tvec; }
+
+const Eigen::Matrix<double, 6, 6>& Image::CovariancePrior() const { return cov_prior_; }
+
+Eigen::Matrix<double, 6, 6>& Image::CovariancePrior() { return cov_prior_; }
+
+inline bool Image::HasCovariancePrior() const { return cov_prior_.norm() > 1e-12; }
+
+inline void Image::SetCovariancePrior(const Eigen::Matrix<double, 6, 6>& prior) { cov_prior_ = prior; }
 
 const class Point2D& Image::Point2D(const point2D_t point2D_idx) const {
   return points2D_.at(point2D_idx);

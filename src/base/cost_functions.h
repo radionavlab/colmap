@@ -24,67 +24,131 @@
 
 namespace colmap {
 
-// Cost function to estimate camera pose given a measurement of its pose
 class CameraPoseCostFunction {
  public:
-  CameraPoseCostFunction(const Eigen::Vector4d& qvec,
-                         const Eigen::Vector3d& tvec)
-      : qw_(qvec(0)),
-        qx_(qvec(1)),
-        qy_(qvec(2)),
-        qz_(qvec(3)),
-        tx_(tvec(0)),
-        ty_(tvec(1)),
-        tz_(tvec(2)) {}
+  CameraPoseCostFunction(const Eigen::Vector3d& tvec,
+                         const Eigen::Matrix<double, 6, 6>& cov)
+      : t_(tvec),
+        cov_(cov) 
+    {}
 
-  static ceres::CostFunction* Create(const Eigen::Vector4d& qvec,
-                                     const Eigen::Vector3d& tvec) {
+  static ceres::CostFunction* Create(const Eigen::Vector3d& tvec,
+                                     const Eigen::Matrix<double, 6, 6>& cov) {
     return (new ceres::AutoDiffCostFunction<
-            CameraPoseCostFunction, 6, 4, 3>(
-        new CameraPoseCostFunction(qvec, tvec)));
+            CameraPoseCostFunction, 3, 3>(
+        new CameraPoseCostFunction(tvec, cov)));
   }
 
   template <typename T>
-  bool operator()(const T* const qvec, const T* const tvec, 
+  bool operator()(const T* const tvec, 
                   T* residuals) const {
 
-    // Measurements and estimates are all in camera frame
-    const T tvec_meas[3] = {T(tx_), T(ty_), T(tz_)};
-    const T qvec_meas[4] = {T(qw_), T(qx_), T(qy_), T(qz_)};
+    typedef Eigen::Matrix<T, 3, 1> TVEC;
+    // typedef Eigen::Matrix<T, 6, 6> COV;
+    typedef Eigen::Matrix<T, 3, 3> COV;
 
-    // Conjugate/invert estimated quaternion
-    const T qvec_inv[4] = {qvec[0], -qvec[1], -qvec[2], -qvec[3]};
+    // Measurements
+    const TVEC tvec_meas = t_.cast<T>();
 
-    // Calculate quaternion error
-    T dq[4];
-    ceres::QuaternionProduct(qvec_inv, qvec_meas, dq);
+    // Square root of information matrix
+    const Eigen::Matrix3d info = cov_.topLeftCorner(3,3).inverse();
+    const Eigen::LLT<Eigen::Matrix3d> chol(info); 
+    const Eigen::Matrix3d Upper = chol.matrixU();
+    const COV sqrt_info = Upper.cast<T>();
 
-    // Normalize quaternion error
-    const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
-    dq[0] /= norm;
-    dq[1] /= norm;
-    dq[2] /= norm;
-    dq[3] /= norm;
+    // Estimates
+    const TVEC tvec_est(tvec[0], tvec[1], tvec[2]);
 
-    // Convert quaternion error to axis-angle representation
-    ceres::QuaternionToAngleAxis(dq, residuals);
+    // Residuals scaled by square root information
+    const TVEC r = sqrt_info * (tvec_est - tvec_meas);
      
-    residuals[3] = tvec[0] - tvec_meas[0];
-    residuals[4] = tvec[1] - tvec_meas[1];
-    residuals[5] = tvec[2] - tvec_meas[2];
+    residuals[0] = r(0);
+    residuals[1] = r(1);
+    residuals[2] = r(2);
 
     return true;
   }
 
  private:
-  const double qw_;
-  const double qx_;
-  const double qy_;
-  const double qz_;
-  const double tx_;
-  const double ty_;
-  const double tz_;
+  const Eigen::Vector3d t_;
+  const Eigen::Matrix<double, 6, 6> cov_;
 };
+
+// Cost function to estimate camera pose given a measurement of its pose
+// class CameraPoseCostFunction {
+//  public:
+//   CameraPoseCostFunction(const Eigen::Vector4d& qvec,
+//                          const Eigen::Vector3d& tvec,
+//                          const Eigen::Matrix<double, 6, 6>& cov)
+//       : q_(qvec),
+//         t_(tvec),
+//         cov_(cov) 
+//     {}
+// 
+//   static ceres::CostFunction* Create(const Eigen::Vector4d& qvec,
+//                                      const Eigen::Vector3d& tvec,
+//                                      const Eigen::Matrix<double, 6, 6>& cov) {
+//     return (new ceres::AutoDiffCostFunction<
+//             CameraPoseCostFunction, 6, 4, 3>(
+//         new CameraPoseCostFunction(qvec, tvec, cov)));
+//   }
+// 
+//   template <typename T>
+//   bool operator()(const T* const qvec, const T* const tvec, 
+//                   T* residuals) const {
+// 
+//     typedef Eigen::Matrix<T, 4, 1> QVEC;
+//     typedef Eigen::Matrix<T, 3, 1> TVEC;
+//     // typedef Eigen::Matrix<T, 6, 6> COV;
+//     typedef Eigen::Matrix<T, 3, 3> COV;
+// 
+//     // Measurements
+//     const QVEC qvec_meas = q_.cast<T>();
+//     const TVEC tvec_meas = t_.cast<T>();
+// 
+//     // Square root of information matrix
+//     const Eigen::Matrix3d info = cov_.topLeftCorner(3,3).inverse();
+//     const Eigen::LLT<Eigen::Matrix3d> chol(info); 
+//     const Eigen::Matrix3d Upper = chol.matrixU();
+//     const COV cov_meas = Upper.cast<T>();
+// 
+//     // Estimates
+//     const QVEC qvec_est(qvec[0], qvec[1], qvec[2], qvec[3]);
+//     const TVEC tvec_est(tvec[0], tvec[1], tvec[2]);
+// 
+//     // Conjugate/invert estimated quaternion
+//     // Conjugate is inverse when quaternion is unit
+//     const QVEC qvec_est_inv(qvec[0], -qvec[1], -qvec[2], -qvec[3]); 
+// 
+//     // Calculate quaternion error
+//     T dq[4];
+//     ceres::QuaternionProduct(qvec_est_inv.data(), qvec_meas.data(), dq);
+// 
+//     // Normalize quaternion error
+//     const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
+//     dq[0] /= norm;
+//     dq[1] /= norm;
+//     dq[2] /= norm;
+//     dq[3] /= norm;
+// 
+//     // Convert quaternion error to axis-angle representation
+//     ceres::QuaternionToAngleAxis(dq, residuals);
+// 
+//     // const TVEC r = cov_meas * (tvec_est - tvec_meas);
+//     const TVEC r = (tvec_est - tvec_meas);
+//      
+//     residuals[3] = r(0);
+//     residuals[4] = r(1);
+//     residuals[5] = r(2);
+// 
+//     return true;
+//   }
+// 
+//  private:
+//   const Eigen::Vector4d q_;
+//   const Eigen::Vector3d t_;
+//   const Eigen::Matrix<double, 6, 6> cov_;
+// };
 
 // Standard bundle adjustment cost function for variable
 // camera pose and calibration and point parameters.
@@ -123,6 +187,11 @@ class BundleAdjustmentCostFunction {
     // Re-projection error.
     residuals[0] -= T(x_);
     residuals[1] -= T(y_);
+
+    // Covariance of pixels. Assumed to be independent. Divide by standard deviation.
+    const T sig = T(5.0);
+    residuals[0] /= sig;
+    residuals[1] /= sig;
 
     return true;
   }
