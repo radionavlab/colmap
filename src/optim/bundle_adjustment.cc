@@ -398,9 +398,6 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
     problem_->AddResidualBlock(
         CameraPoseCostFunction::Create(image.QvecPrior(), image.TvecPrior(), image.CovariancePrior()),
         NULL, qvec_data, tvec_data);
-    // problem_->AddResidualBlock(
-    //     CameraPoseCostFunction::Create(image.TvecPrior(), image.CovariancePrior()),
-    //     NULL, tvec_data);
   }
 
   const bool constant_pose = config_.HasConstantPose(image_id);

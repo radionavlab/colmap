@@ -24,56 +24,6 @@
 
 namespace colmap {
 
-// class CameraPoseCostFunction {
-//  public:
-//   CameraPoseCostFunction(const Eigen::Vector3d& tvec,
-//                          const Eigen::Matrix<double, 6, 6>& cov)
-//       : t_(tvec),
-//         cov_(cov) 
-//     {}
-// 
-//   static ceres::CostFunction* Create(const Eigen::Vector3d& tvec,
-//                                      const Eigen::Matrix<double, 6, 6>& cov) {
-//     return (new ceres::AutoDiffCostFunction<
-//             CameraPoseCostFunction, 3, 3>(
-//         new CameraPoseCostFunction(tvec, cov)));
-//   }
-// 
-//   template <typename T>
-//   bool operator()(const T* const tvec, 
-//                   T* residuals) const {
-// 
-//     typedef Eigen::Matrix<T, 3, 1> TVEC;
-//     // typedef Eigen::Matrix<T, 6, 6> COV;
-//     typedef Eigen::Matrix<T, 3, 3> COV;
-// 
-//     // Measurements
-//     const TVEC tvec_meas = t_.cast<T>();
-// 
-//     // Square root of information matrix
-//     const Eigen::Matrix3d info = cov_.topLeftCorner(3,3).inverse();
-//     const Eigen::LLT<Eigen::Matrix3d> chol(info); 
-//     const Eigen::Matrix3d Upper = chol.matrixU();
-//     const COV sqrt_info = Upper.cast<T>();
-// 
-//     // Estimates
-//     const TVEC tvec_est(tvec[0], tvec[1], tvec[2]);
-// 
-//     // Residuals scaled by square root information
-//     const TVEC r = sqrt_info * (tvec_est - tvec_meas);
-//      
-//     residuals[0] = r(0);
-//     residuals[1] = r(1);
-//     residuals[2] = r(2);
-// 
-//     return true;
-//   }
-// 
-//  private:
-//   const Eigen::Vector3d t_;
-//   const Eigen::Matrix<double, 6, 6> cov_;
-// };
-
 // Cost function to estimate camera pose given a measurement of its pose
 class CameraPoseCostFunction {
  public:
@@ -106,7 +56,11 @@ class CameraPoseCostFunction {
     const TVEC tvec_meas = t_.cast<T>();
 
     // Square root of information matrix
-    const Eigen::Matrix<double, 6, 6> info = cov_.inverse();
+    Eigen::Matrix<double, 6, 6> c = (Eigen::Matrix<double, 6, 6>().setZero());
+    c.topLeftCorner<3, 3>() = (0.003*Eigen::Matrix<double, 3, 3>().setIdentity());
+    c.bottomRightCorner<3, 3>() = (1.0*Eigen::Matrix<double, 3, 3>().setIdentity());
+    // const Eigen::Matrix<double, 6, 6> info = cov_.inverse();
+    const Eigen::Matrix<double, 6, 6> info = c.inverse();
     const Eigen::LLT<Eigen::Matrix<double, 6, 6> > chol(info); 
     const Eigen::Matrix<double, 6, 6> Upper = chol.matrixU();
     const COV sqrt_info = Upper.cast<T>();
@@ -130,14 +84,18 @@ class CameraPoseCostFunction {
     dq[2] /= norm;
     dq[3] /= norm;
 
-    // Convert quaternion error to axis-angle representation
-    T re[3];
-    ceres::QuaternionToAngleAxis(dq, re);
+    // Convert quaternion error to euler angle error
+    // evec residual
+    T re[3] = {
+        atan2(T(2)*(dq[0]*dq[1] + dq[2]*dq[3]), T(1) - T(2)*(dq[1]*dq[1] + dq[2]*dq[2])),
+        asin(T(2)*(dq[0]*dq[2] - dq[3]*dq[1])),
+        atan2(T(2)*(dq[0]*dq[3] + dq[1]*dq[2]), T(1) - T(2)*(dq[2]*dq[2] + dq[3]*dq[3]))
+    };
 
     // tvec residual
     const TVEC rt = tvec_est - tvec_meas;
 
-    // Combined residual
+    // Combined residuals
     const Eigen::Matrix<T, 6, 1> r = (Eigen::Matrix<T, 6, 1>() << rt(0), rt(1), rt(2), re[0], re[1], re[2]).finished();
 
     // Scale by square root info

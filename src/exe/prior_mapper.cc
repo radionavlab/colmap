@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
   ba_controller.Start();
   ba_controller.Wait();
  
-  // reconstruction.Write(export_path);
+  reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
   
   /* 
