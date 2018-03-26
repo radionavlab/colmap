@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_priors);
 
   /* 4) Run global BA */
-  options.bundle_adjustment->compute_covariance = false;
+  options.bundle_adjustment->compute_covariance = true;
   options.bundle_adjustment->normalize = false;
   options.bundle_adjustment->solver_options.max_num_iterations = 1000;
   BundleAdjustmentController ba_controller(options, &reconstruction);
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
 // 
 //     /* 7) GOTO 2 */
 //     
-//   std::cout << "Success!" << std::endl;
+  std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;
 }
