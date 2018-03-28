@@ -56,11 +56,7 @@ class CameraPoseCostFunction {
     const TVEC tvec_meas = t_.cast<T>();
 
     // Square root of information matrix
-    Eigen::Matrix<double, 6, 6> c = (Eigen::Matrix<double, 6, 6>().setZero());
-    c.topLeftCorner<3, 3>() = (0.003*Eigen::Matrix<double, 3, 3>().setIdentity());
-    c.bottomRightCorner<3, 3>() = (1.0*Eigen::Matrix<double, 3, 3>().setIdentity());
-    // const Eigen::Matrix<double, 6, 6> info = cov_.inverse();
-    const Eigen::Matrix<double, 6, 6> info = c.inverse();
+    const Eigen::Matrix<double, 6, 6> info = cov_.inverse();
     const Eigen::LLT<Eigen::Matrix<double, 6, 6> > chol(info); 
     const Eigen::Matrix<double, 6, 6> Upper = chol.matrixU();
     const COV sqrt_info = Upper.cast<T>();
