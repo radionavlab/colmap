@@ -297,7 +297,7 @@ if (options_.compute_covariance) {
     // TODO Fix these hard-coded values
     const Eigen::Vector3d axle(0,0,1);
     const double axle_threshhold = 1.0;
-    const double alt_threshhold = 1.0;
+    const double alt_threshhold = 1.5;
  
     // Only calculate the covariance of points within the ROI
     std::vector<point3D_t> problem_points3D_ids;
