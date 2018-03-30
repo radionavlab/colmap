@@ -288,16 +288,16 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     PrintSolverSummary(summary_);
   }
 
-if (options_.compute_covariance) {
+if (options_.cov.compute) {
     // Compute covariance matrix of each 3D point
     ceres::Covariance::Options covariance_options;
     covariance_options.num_threads = solver_options.num_threads;
     ceres::Covariance covariance(covariance_options);
     
-    // TODO Fix these hard-coded values
-    const Eigen::Vector3d axle(0,0,1);
-    const double axle_threshhold = 1.0;
-    const double alt_threshhold = 1.5;
+    // ROI specified by cyllinder
+    const Eigen::Vector3d axle = options_.cov.axle;
+    const double axle_threshhold = options_.cov.axle_threshhold;
+    const double alt_threshhold = options_.cov.alt_threshhold;
  
     // Only calculate the covariance of points within the ROI
     std::vector<point3D_t> problem_points3D_ids;
