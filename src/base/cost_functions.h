@@ -56,14 +56,9 @@ class CameraPoseCostFunction {
     const TVEC tvec_meas = t_.cast<T>();
 
     // Square root of information matrix
-    Eigen::Matrix<double, 6, 6> cov = Eigen::Matrix<double, 6, 6>().Zero();
-    cov.topLeftCorner(3,3) = 0.001 * Eigen::Matrix<double, 3,3>().Identity();
-    cov.bottomRightCorner(3,3) = 0.01 * Eigen::Matrix<double, 3,3>().Identity();
-    // const Eigen::Matrix<double, 6, 6> info = cov_.inverse();
-    const Eigen::Matrix<double, 6, 6> info = cov.inverse();
-    const Eigen::LLT<Eigen::Matrix<double, 6, 6> > chol(info); 
-    const Eigen::Matrix<double, 6, 6> Upper = chol.matrixU();
-    const COV sqrt_info = Upper.cast<T>();
+    const Eigen::LLT<Eigen::Matrix<double, 6, 6> > chol(cov_);
+    const Eigen::Matrix<double, 6, 6> lower = chol.matrixL();
+    const COV sqrt_info = lower.inverse().cast<T>();
 
     // Estimates
     const QVEC qvec_est(qvec[0], qvec[1], qvec[2], qvec[3]);
@@ -72,10 +67,11 @@ class CameraPoseCostFunction {
     // Conjugate/invert estimated quaternion
     // Conjugate is inverse when quaternion is unit
     const QVEC qvec_est_inv(qvec[0], -qvec[1], -qvec[2], -qvec[3]); 
+    const QVEC qvec_meas_inv(qvec_meas(0), T(-1)*qvec_meas(1), T(-1)*qvec_meas(2), T(-1)*qvec_meas(3));
 
     // Calculate quaternion error
     T dq[4];
-    ceres::QuaternionProduct(qvec_est_inv.data(), qvec_meas.data(), dq);
+    ceres::QuaternionProduct(qvec_est.data(), qvec_meas_inv.data(), dq);
 
     // Normalize quaternion error
     const T norm = sqrt(dq[0]*dq[0] + dq[1]*dq[1] + dq[2]*dq[2] + dq[3]*dq[3]);
@@ -85,11 +81,12 @@ class CameraPoseCostFunction {
     dq[3] /= norm;
 
     // Convert quaternion error to euler angle error
-    // evec residual
+    // http://www.sedris.org/wg8home/Documents/WG80485.pdf
+    // Page 39
     T re[3] = {
-        atan2(T(2)*(dq[0]*dq[1] + dq[2]*dq[3]), T(1) - T(2)*(dq[1]*dq[1] + dq[2]*dq[2])),
+        atan2((dq[0]*dq[1] + dq[2]*dq[3]), T(0.5) - (dq[1]*dq[1] + dq[2]*dq[2])),
         asin(T(2)*(dq[0]*dq[2] - dq[3]*dq[1])),
-        atan2(T(2)*(dq[0]*dq[3] + dq[1]*dq[2]), T(1) - T(2)*(dq[2]*dq[2] + dq[3]*dq[3]))
+        atan2((dq[0]*dq[3] + dq[1]*dq[2]), T(0.5) - (dq[2]*dq[2] + dq[3]*dq[3]))
     };
 
     // tvec residual

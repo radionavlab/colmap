@@ -27,7 +27,7 @@ void ReadCameraMeasurements(const std::string& path,
                          std::vector<std::string>* image_names,
                          std::vector<Eigen::Vector3d>* TvecPriorsGlobal,
                          std::vector<Eigen::Vector3d>* TvecPriorsCamera,
-                         std::vector<Eigen::Vector3d>* EvecPriorsCamera,
+                         std::vector<Eigen::Matrix3d>* RvecPriorsCamera,
                          std::vector< Eigen::Matrix<double, 6, 6> >* PriorsCovariance) {
   std::vector<std::string> lines = ReadTextFileLines(path);
   for (const auto line : lines) {
@@ -37,10 +37,11 @@ void ReadCameraMeasurements(const std::string& path,
     std::string image_name = "";
     Eigen::Vector3d TvecPriorGlobal;
     Eigen::Vector3d TvecPriorCamera;
-    Eigen::Vector3d EvecPriorCamera;
+    Eigen::Matrix3d RvecPriorCamera;
     Eigen::Matrix<double, 6, 6> PriorCovariance;
 
     // Read data into buffers
+    // Translation
     line_parser >> 
         image_name >> 
         TvecPriorGlobal(0) >> 
@@ -48,11 +49,16 @@ void ReadCameraMeasurements(const std::string& path,
         TvecPriorGlobal(2) >> 
         TvecPriorCamera(0) >>
         TvecPriorCamera(1) >>
-        TvecPriorCamera(2) >>
-        EvecPriorCamera(0) >>
-        EvecPriorCamera(1) >>
-        EvecPriorCamera(2);
+        TvecPriorCamera(2);
 
+    // Rotation
+    for(int i = 0; i < 3; i ++) {
+        for(int j = 0; j < 3; j++) {
+            line_parser >> RvecPriorCamera(j, i);
+        }
+    }
+
+    // Covariance
     for(int i = 0; i < 6; i++) {
         for(int j = 0; j < 6; j++) {
             line_parser >> PriorCovariance(j, i);
@@ -63,7 +69,7 @@ void ReadCameraMeasurements(const std::string& path,
     image_names->push_back(image_name);
     TvecPriorsGlobal->push_back(TvecPriorGlobal);
     TvecPriorsCamera->push_back(TvecPriorCamera);
-    EvecPriorsCamera->push_back(EvecPriorCamera);
+    RvecPriorsCamera->push_back(RvecPriorCamera);
     PriorsCovariance->push_back(PriorCovariance);
   }
 }
@@ -96,14 +102,14 @@ int main(int argc, char** argv) {
   std::vector<std::string> image_names;
   std::vector<Eigen::Vector3d> TvecPriorsGlobal;
   std::vector<Eigen::Vector3d> TvecPriorsCamera;
-  std::vector<Eigen::Vector3d> EvecPriorsCamera;
+  std::vector<Eigen::Matrix3d> RvecPriorsCamera;
   std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovariance;
   ReadCameraMeasurements(
           image_pose_path, 
           &image_names, 
           &TvecPriorsGlobal, 
           &TvecPriorsCamera, 
-          &EvecPriorsCamera, 
+          &RvecPriorsCamera, 
           &PriorsCovariance);
 
   /* 2) Align reconstruction with ECEF measurements to bring it into global frame. */
@@ -123,17 +129,11 @@ int main(int argc, char** argv) {
   /* 3) Insert the measurements into reconstruction */
   std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > image_priors;
   for(size_t i = 0; i < TvecPriorsCamera.size(); i++) {
-    // Transform 3-2-1 euler angle to quaternion
-    const Eigen::Vector4d QvecPriorCamera = 
-        RotationMatrixToQuaternion(
-                EulerAnglesToRotationMatrix(
-                    EvecPriorsCamera[i](0), 
-                    EvecPriorsCamera[i](1), 
-                    EvecPriorsCamera[i](2)));
-
     image_priors.insert({
                 image_names[i], 
-                std::make_tuple(TvecPriorsCamera[i], QvecPriorCamera, PriorsCovariance[i])
+                std::make_tuple(TvecPriorsCamera[i], 
+                                RotationMatrixToQuaternion(RvecPriorsCamera[i]), 
+                                PriorsCovariance[i])
     });
   }
 

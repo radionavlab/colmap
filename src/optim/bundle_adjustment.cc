@@ -288,30 +288,44 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     PrintSolverSummary(summary_);
   }
 
-  if (options_.compute_covariance) {
+if (options_.compute_covariance) {
     // Compute covariance matrix of each 3D point
     ceres::Covariance::Options covariance_options;
     covariance_options.num_threads = solver_options.num_threads;
     ceres::Covariance covariance(covariance_options);
-
+    
+    // TODO Fix these hard-coded values
+    const Eigen::Vector3d axle(0,0,1);
+    const double axle_threshhold = 1.0;
+    const double alt_threshhold = 1.5;
+ 
+    // Only calculate the covariance of points within the ROI
     std::vector<point3D_t> problem_points3D_ids;
+    std::vector<point3D_t> not_roi_point_ids;
     std::vector< std::pair<const double*, const double*> > covariance_blocks;
     for (const auto& point3D : reconstruction->Points3D()) {
       const double* data = point3D.second.XYZ().data();
-      if (problem_->HasParameterBlock(data)) {
+      const Eigen::Vector3d p = point3D.second.XYZ();
+
+      if( problem_->HasParameterBlock(data) &&
+          p.cross(axle).norm() < axle_threshhold &&
+          std::fabs(p.dot(axle))   < alt_threshhold ) {
         problem_points3D_ids.push_back(point3D.first);
         covariance_blocks.emplace_back(data, data);
+      } else {
+        not_roi_point_ids.push_back(point3D.first);
       }
     }
-
+ 
     PrintHeading1("Computing covariance of " + 
                   std::to_string(covariance_blocks.size()) + " points");
     CHECK(covariance.Compute(covariance_blocks, problem_.get()));
-
+ 
+    // Extract covariance
     for (const auto point3D_id : problem_points3D_ids) {
       Point3D& point3D = reconstruction->Point3D(point3D_id);
       const double* data = point3D.XYZ().data();
-
+ 
       // The matrix returned by Ceres is row-major so we must create a special 
       // container for it. Eigen handles the conversion from row-major to 
       // column-major automatically when SetCovariance() is called
@@ -319,31 +333,18 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
       covariance.GetCovarianceBlock(data, data, P.data());
       point3D.SetCovariance(P);
     }
-  }
 
-//  if (options_.compute_covariance) {
-//    PrintHeading1("Computing covariance...");
-//    for (const auto& point3D : reconstruction->Points3D()) {
-//      // Compute covariance matrix of each 3D point
-//      ceres::Covariance::Options covariance_options;
-//      covariance_options.num_threads = solver_options.num_threads;
-//      ceres::Covariance covariance(covariance_options);
-//
-//      std::vector< std::pair<const double*, const double*> > covariance_blocks;
-//      const double* data = point3D.second.XYZ().data();
-//      if (problem_->HasParameterBlock(data)) {
-//        covariance_blocks.emplace_back(data, data);
-//        CHECK(covariance.Compute(covariance_blocks, problem_.get()));
-//
-//        // The matrix returned by Ceres is row-major so we must create a special 
-//        // container for it. Eigen handles the conversion from row-major to 
-//        // column-major automatically when SetCovariance() is called
-//        Eigen::Matrix<double, 3, 3, Eigen::RowMajor> P;
-//        covariance.GetCovarianceBlock(data, data, P.data());
-//        reconstruction->Point3D(point3D.first).SetCovariance(P);
-//      }
-//    }
-//  }
+    // Add dummy covariance for those points not in the ROI
+    for (const auto point3D_id : not_roi_point_ids) {
+      Point3D& point3D = reconstruction->Point3D(point3D_id);
+ 
+      // The matrix returned by Ceres is row-major so we must create a special 
+      // container for it. Eigen handles the conversion from row-major to 
+      // column-major automatically when SetCovariance() is called
+      Eigen::Matrix<double, 3, 3, Eigen::RowMajor> P = (Eigen::Matrix<double, 3, 3>() << -1, -1, -1, -1, -1, -1, -1, -1, -1).finished();
+      point3D.SetCovariance(P);
+    }
+   }
 
   TearDown(reconstruction);
 
