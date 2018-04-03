@@ -79,12 +79,18 @@ int main(int argc, char** argv) {
 
   std::string import_path;
   std::string export_path;
-  std::string image_pose_path;
+  std::string min_set_path;
+  std::string max_set_path;
+  std::string min_pose_path;
+  std::string max_pose_path;
 
   OptionManager options;
   options.AddRequiredOption("import_path", &import_path);
   options.AddRequiredOption("export_path", &export_path);
-  options.AddRequiredOption("image_pose_path", &image_pose_path);
+  options.AddRequiredOption("min_set_path", &min_set_path);
+  options.AddRequiredOption("max_set_path", &max_set_path);
+  options.AddRequiredOption("min_pose_path", &max_pose_path);
+  options.AddRequiredOption("max_pose_path", &max_pose_path);
   options.AddBundleAdjustmentOptions();
   options.Parse(argc, argv);
 
@@ -99,26 +105,39 @@ int main(int argc, char** argv) {
   */
 
   /* 1) Read in the camera measurements */
-  std::vector<std::string> image_names;
-  std::vector<Eigen::Vector3d> TvecPriorsGlobal;
-  std::vector<Eigen::Vector3d> TvecPriorsCamera;
-  std::vector<Eigen::Matrix3d> RvecPriorsCamera;
-  std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovariance;
+  std::vector<std::string> imageNamesMin;
+  std::vector<Eigen::Vector3d> TvecPriorsGlobalMin;
+  std::vector<Eigen::Vector3d> TvecPriorsCameraMin;
+  std::vector<Eigen::Matrix3d> RvecPriorsCameraMin;
+  std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovarianceMin;
   ReadCameraMeasurements(
-          image_pose_path, 
-          &image_names, 
-          &TvecPriorsGlobal, 
-          &TvecPriorsCamera, 
-          &RvecPriorsCamera, 
-          &PriorsCovariance);
+          min_pose_path, 
+          &imageNamesMin, 
+          &TvecPriorsGlobalMin, 
+          &TvecPriorsCameraMin, 
+          &RvecPriorsCameraMin, 
+          &PriorsCovarianceMin);
+
+  std::vector<std::string> imageNamesMax;
+  std::vector<Eigen::Vector3d> TvecPriorsGlobalMax;
+  std::vector<Eigen::Vector3d> TvecPriorsCameraMax;
+  std::vector<Eigen::Matrix3d> RvecPriorsCameraMax;
+  std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovarianceMax;
+  ReadCameraMeasurements(
+          max_pose_path, 
+          &imageNamesMax, 
+          &TvecPriorsGlobalMax, 
+          &TvecPriorsCameraMax, 
+          &RvecPriorsCameraMax, 
+          &PriorsCovarianceMax);
 
   /* 2) Align reconstruction with ECEF measurements to bring it into global frame. */
-  bool alignment_success = reconstruction.Align(
-          image_names,
-          TvecPriorsGlobal,
+  bool alignmentSuccess = reconstruction.Align(
+          imageNamesMin,
+          TvecPriorsGlobalMin,
           3);
 
-  if (alignment_success) {
+  if (alignmentSuccess) {
     std::cout << " => Alignment succeeded" << std::endl;
   } else {
     std::cout << " => Alignment failed" << std::endl;
@@ -126,18 +145,18 @@ int main(int argc, char** argv) {
   }
  
 
-  /* 3) Insert the measurements into reconstruction */
-  std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > image_priors;
-  for(size_t i = 0; i < TvecPriorsCamera.size(); i++) {
-    image_priors.insert({
-                image_names[i], 
-                std::make_tuple(TvecPriorsCamera[i], 
-                                RotationMatrixToQuaternion(RvecPriorsCamera[i]), 
-                                PriorsCovariance[i])
+  /* 3) Insert all the measurements into reconstruction */
+  std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > imagePriors;
+  for(size_t i = 0; i < TvecPriorsCameraMin.size(); i++) {
+    imagePriors.insert({
+                imageNamesMin[i], 
+                std::make_tuple(TvecPriorsCameraMin[i], 
+                                RotationMatrixToQuaternion(RvecPriorsCameraMin[i]), 
+                                PriorsCovarianceMin[i])
     });
   }
 
-  reconstruction.AddPriors(image_priors);
+  reconstruction.AddPriors(imagePriors);
 
   /* 4) Run global BA */
   options.bundle_adjustment->cov.compute = true;
@@ -152,6 +171,18 @@ int main(int argc, char** argv) {
  
   // reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
+
+  /* GAME PLAN 
+   * 1) Min/Max image directory
+   * 2) Read in all images. Extract/match all features.
+   * 3) Reconstruct only minimal scene
+   * 4) REPEAT
+   * 4.1) Evaluate covariance and accuracy metric
+   * 4.2) Apply image selection criteria to all unchosen images
+   * 4.3) Select best image, add to reconstruction, reconstruct.
+   * 4.4) END REPEAT
+   */
+  
   
   std::cout << "Success!" << std::endl;
 
