@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
   options.AddRequiredOption("export_path", &export_path);
   options.AddRequiredOption("min_set_path", &min_set_path);
   options.AddRequiredOption("max_set_path", &max_set_path);
-  options.AddRequiredOption("min_pose_path", &max_pose_path);
+  options.AddRequiredOption("min_pose_path", &min_pose_path);
   options.AddRequiredOption("max_pose_path", &max_pose_path);
   options.AddBundleAdjustmentOptions();
   options.Parse(argc, argv);

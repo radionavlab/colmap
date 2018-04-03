@@ -64,6 +64,9 @@ class Point3D {
   inline class Track& Track();
   inline void SetTrack(const class Track& track);
 
+  inline bool Keypoint();
+  inline void SetKeypoint(const bool keypoint);
+
  private:
   // The 3D position of the point.
   Eigen::Vector3d xyz_;
@@ -79,6 +82,9 @@ class Point3D {
 
   // The track of the point as a list of image observations.
   class Track track_;
+
+  // This point is tracked as a keypoint for covariance evaluation
+  bool keypoint_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,6 +138,10 @@ class Track& Point3D::Track() {
 }
 
 void Point3D::SetTrack(const class Track& track) { track_ = track; }
+
+bool Point3D::Keypoint() { return keypoint_; }
+
+void Point3D::SetKeypoint(const bool keypoint) { keypoint_ = keypoint; }
 
 }  // namespace colmap
 
