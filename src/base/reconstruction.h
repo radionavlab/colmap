@@ -178,7 +178,6 @@ class Reconstruction {
              const int min_common_images,
              SimilarityTransform3& tform);
 
-  bool ReAlign(const SimilarityTransform3& tform);
   void AddPriors(const std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > >);
 
   // Find image with name.

@@ -1,0 +1,44 @@
+
+# Run feature extraction and matching over the minimal set
+feature_extractor \
+    --database_path `pwd`/database.db \
+    --image_path `pwd`/min \
+    --ImageReader.camera_model SIMPLE_RADIAL \
+    --ImageReader.single_camera 1 \
+    --SiftExtraction.gpu_index 0 \
+    --SiftExtraction.use_gpu 1
+
+exhaustive_matcher \
+    --database_path `pwd`/database.db \
+    --SiftMatching.use_gpu 1 \
+    --ExhaustiveMatching.block_size 250
+
+# Run the normal mapper
+mkdir `pwd`/model
+mapper \
+    --database_path `pwd`/database.db \
+    --image_path `pwd`/min \
+    --exportPath `pwd`/model \
+
+# Extract and match features of the maximal set
+feature_extractor \
+    --database_path `pwd`/database.db \
+    --image_path `pwd`/max \
+    --ImageReader.camera_model SIMPLE_RADIAL \
+    --ImageReader.single_camera 1 \
+    --SiftExtraction.gpu_index 0 \
+    --SiftExtraction.use_gpu 1
+
+exhaustive_matcher \
+    --database_path `pwd`/database.db \
+    --SiftMatching.use_gpu 1 \
+    --ExhaustiveMatching.block_size 250
+
+# Run the prior mapper
+prior_mapper \
+    --import_path `pwd`/model/0 \
+    --export_path `pwd`/model/0 \
+    --min_set_path `pwd`/min \
+    --max_set_path `pwd`/max \
+    --min_pose_path `pwd`/min/image_poses.txt \
+    --max_pose_path `pwd`/max/image_poses.txt

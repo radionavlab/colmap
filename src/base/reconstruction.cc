@@ -601,7 +601,12 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
   return true;
 }
 
-void Reconstruction::AddPriors(const std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > priors) {
+void Reconstruction::AddPriors(const std::unordered_map< 
+                                   std::string, 
+                                   std::tuple<
+                                       Eigen::Vector3d, 
+                                       Eigen::Vector4d, 
+                                       Eigen::Matrix<double, 6, 6> > > priors) {
     for (const auto& image : this->Images()) { 
         auto it = priors.find(image.second.Name()); 
         if (it != priors.end()) { 
