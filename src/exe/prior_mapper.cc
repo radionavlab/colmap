@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_priors);
 
   /* 4) Run global BA */
-  options.bundle_adjustment->cov.compute = true;
+  options.bundle_adjustment->cov.compute = false;
   options.bundle_adjustment->cov.axle = Eigen::Vector3d(0,0,1);
   options.bundle_adjustment->cov.axle_threshhold = 0.5;
   options.bundle_adjustment->cov.alt_threshhold = 1.0;
@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
   ba_controller.Start();
   ba_controller.Wait();
  
-  // reconstruction.Write(export_path);
+  reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
   
   std::cout << "Success!" << std::endl;
