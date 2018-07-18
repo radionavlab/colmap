@@ -25,6 +25,59 @@
 namespace colmap {
 
 // Cost function to estimate camera pose given a measurement of its pose
+class CameraPositionCostFunction {
+ public:
+  CameraPositionCostFunction(const Eigen::Vector3d& tvec,
+                         const Eigen::Matrix<double, 3, 3>& cov)
+      : t_(tvec),
+        cov_(cov) 
+    {}
+
+  static ceres::CostFunction* Create(const Eigen::Vector3d& tvec,
+                                     const Eigen::Matrix<double, 3, 3>& cov) {
+    return (new ceres::AutoDiffCostFunction<
+            CameraPositionCostFunction, 3, 3>(
+        new CameraPositionCostFunction(tvec, cov)));
+  }
+
+  template <typename T>
+  bool operator()(const T* const tvec, 
+                  T* residuals) const {
+
+    typedef Eigen::Matrix<T, 3, 1> tvec_t;
+    typedef Eigen::Matrix<T, 3, 3> cov_t;
+
+    // Measurements
+    const tvec_t tvec_meas = t_.cast<T>();
+
+    // Square root of information matrix
+    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
+    const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
+    const cov_t sqrt_info = lower.inverse().cast<T>();
+
+    // Estimates
+    const tvec_t tvec_est(tvec[0], tvec[1], tvec[2]);
+
+    // tvec residual
+    const tvec_t tvec_res = tvec_est - tvec_meas;
+
+    // Scale by square root info
+    const tvec_t res = sqrt_info * tvec_res; 
+
+    // Output
+    residuals[0] = res(0);
+    residuals[1] = res(1);
+    residuals[2] = res(2);
+
+    return true;
+  }
+
+ private:
+  const Eigen::Vector3d t_;
+  const Eigen::Matrix<double, 3, 3> cov_;
+};
+
+// Cost function to estimate camera pose given a measurement of its pose
 class CameraPoseCostFunction {
  public:
   CameraPoseCostFunction(const Eigen::Vector4d& qvec,
