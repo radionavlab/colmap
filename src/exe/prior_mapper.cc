@@ -79,12 +79,12 @@ int main(int argc, char** argv) {
 
   std::string import_path;
   std::string export_path;
-  std::string image_pose_path;
+  std::string metadata_path;
 
   OptionManager options;
   options.AddRequiredOption("import_path", &import_path);
   options.AddRequiredOption("export_path", &export_path);
-  options.AddRequiredOption("image_pose_path", &image_pose_path);
+  options.AddRequiredOption("metadata_path", &metadata_path);
   options.AddBundleAdjustmentOptions();
   options.Parse(argc, argv);
 
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   std::vector<Eigen::Matrix3d> RvecPriorsCamera;
   std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovariance;
   ReadCameraMeasurements(
-          image_pose_path, 
+          metadata_path, 
           &image_names, 
           &TvecPriorsGlobal, 
           &TvecPriorsCamera, 
@@ -141,9 +141,6 @@ int main(int argc, char** argv) {
 
   /* 4) Run global BA */
   options.bundle_adjustment->cov.compute = false;
-  options.bundle_adjustment->cov.axle = Eigen::Vector3d(0,0,1);
-  options.bundle_adjustment->cov.axle_threshhold = 0.5;
-  options.bundle_adjustment->cov.alt_threshhold = 1.0;
   options.bundle_adjustment->normalize = false;
   options.bundle_adjustment->solver_options.max_num_iterations = 1000;
   BundleAdjustmentController ba_controller(options, &reconstruction);
