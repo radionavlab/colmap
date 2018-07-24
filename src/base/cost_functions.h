@@ -49,9 +49,10 @@ class CameraPositionCostFunction {
 
     // Measurements
     const tvec_t tvec_meas = t_.cast<T>();
+    Eigen::Matrix3d cov = (Eigen::Matrix3d() << 0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001).finished();
 
     // Square root of information matrix
-    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
+    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov);
     const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
     const cov_t sqrt_info = lower.inverse().cast<T>();
 
@@ -235,7 +236,8 @@ class BundleAdjustmentConstantPoseCostFunction {
         ty_(tvec(1)),
         tz_(tvec(2)),
         x_(point2D(0)),
-        y_(point2D(1)) {}
+        y_(point2D(1))
+    {}
 
   static ceres::CostFunction* Create(const Eigen::Vector4d& qvec,
                                      const Eigen::Vector3d& tvec,
@@ -295,7 +297,8 @@ template <typename CameraModel>
 class RigBundleAdjustmentCostFunction {
  public:
   explicit RigBundleAdjustmentCostFunction(const Eigen::Vector2d& point2D)
-      : x_(point2D(0)), y_(point2D(1)) {}
+      : x_(point2D(0)), y_(point2D(1))
+    {}
 
   static ceres::CostFunction* Create(const Eigen::Vector2d& point2D) {
     return (new ceres::AutoDiffCostFunction<
@@ -357,7 +360,8 @@ class RigBundleAdjustmentCostFunction {
 class RelativePoseCostFunction {
  public:
   RelativePoseCostFunction(const Eigen::Vector2d& x1, const Eigen::Vector2d& x2)
-      : x1_(x1(0)), y1_(x1(1)), x2_(x2(0)), y2_(x2(1)) {}
+      : x1_(x1(0)), y1_(x1(1)), x2_(x2(0)), y2_(x2(1))
+    {}
 
   static ceres::CostFunction* Create(const Eigen::Vector2d& x1,
                                      const Eigen::Vector2d& x2) {

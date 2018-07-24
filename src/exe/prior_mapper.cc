@@ -113,13 +113,18 @@ int main(int argc, char** argv) {
           &PriorsCovariance);
 
   /* 2) Align reconstruction with ECEF measurements to bring it into global frame. */
-  bool alignment_success = reconstruction.Align(
+  RANSACOptions ransac_options;
+  ransac_options.max_error = 0.01;
+  bool alignment_success = reconstruction.AlignRobust(
           image_names,
           TvecPriorsGlobal,
-          3);
+          3,
+          ransac_options);
 
   if (alignment_success) {
     std::cout << " => Alignment succeeded" << std::endl;
+    reconstruction.Write("sparse/aligned");
+    reconstruction.WriteText("sparse/aligned");
   } else {
     std::cout << " => Alignment failed" << std::endl;
     return EXIT_FAILURE;
@@ -140,15 +145,22 @@ int main(int argc, char** argv) {
   reconstruction.AddPriors(image_priors);
 
   /* 4) Run global BA */
+  // Configure BA
   options.bundle_adjustment->cov.compute = false;
-  options.bundle_adjustment->normalize = false;
+  options.bundle_adjustment->priors = true;
+  // options.bundle_adjustment->loss_function_type = 
+  //     BundleAdjustmentOptions::LossFunctionType::CAUCHY;
+  // options.bundle_adjustment->loss_function_scale = 1;
   options.bundle_adjustment->solver_options.max_num_iterations = 1000;
+
+  // Run BA
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();
   ba_controller.Wait();
- 
-  reconstruction.Write(export_path);
-  reconstruction.WriteText(export_path);
+
+  // Save output
+  reconstruction.Write("sparse/priors");
+  reconstruction.WriteText("sparse/priors");
   
   std::cout << "Success!" << std::endl;
 

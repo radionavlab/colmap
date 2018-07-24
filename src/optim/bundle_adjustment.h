@@ -62,7 +62,7 @@ struct BundleAdjustmentOptions {
   CovarianceOptions cov;
   
   // Whether to use priors or not
-  bool normalize = true;
+  bool priors = false;
 
   // Whether to print a final summary.
   bool print_summary = true;

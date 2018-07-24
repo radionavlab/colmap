@@ -77,8 +77,10 @@ void BundleAdjustmentController::Run() {
   for (const image_t image_id : reg_image_ids) {
     ba_config.AddImage(image_id);
   }
-  ba_config.SetConstantPose(reg_image_ids[0]);
-  ba_config.SetConstantTvec(reg_image_ids[1], {0});
+  if(!ba_options.priors) {
+    ba_config.SetConstantPose(reg_image_ids[0]);
+    ba_config.SetConstantTvec(reg_image_ids[1], {0});
+  }
 
   // Run bundle adjustment.
   BundleAdjuster bundle_adjuster(ba_options, ba_config);
@@ -86,8 +88,8 @@ void BundleAdjustmentController::Run() {
 
   // Normalize scene for numerical stability and
   // to avoid large scale changes in viewer.
-  // If using prirs, don't normalize
-  if(ba_options.normalize) {
+  // If using priors, don't normalize
+  if(!ba_options.priors) {
     reconstruction_->Normalize();
   } 
 
