@@ -22,22 +22,27 @@
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 
+#include "pose.h"
+
 namespace colmap {
 
 // Cost function to estimate camera pose given a measurement of its pose
 class CameraPositionCostFunction {
  public:
   CameraPositionCostFunction(const Eigen::Vector3d& tvec,
-                         const Eigen::Matrix<double, 3, 3>& cov)
+                             const Eigen::Vector4d& qvec,
+                             const Eigen::Matrix<double, 3, 3>& cov)
       : t_(tvec),
+        q_(qvec),
         cov_(cov) 
     {}
 
   static ceres::CostFunction* Create(const Eigen::Vector3d& tvec,
+                                     const Eigen::Vector4d& qvec,
                                      const Eigen::Matrix<double, 3, 3>& cov) {
     return (new ceres::AutoDiffCostFunction<
             CameraPositionCostFunction, 3, 3>(
-        new CameraPositionCostFunction(tvec, cov)));
+        new CameraPositionCostFunction(tvec, qvec, cov)));
   }
 
   template <typename T>
@@ -49,15 +54,16 @@ class CameraPositionCostFunction {
 
     // Measurements
     const tvec_t tvec_meas = t_.cast<T>();
-    Eigen::Matrix3d cov = (Eigen::Matrix3d() << 0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001).finished();
+    Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
+    Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
 
     // Square root of information matrix
-    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov);
+    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
     const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
     const cov_t sqrt_info = lower.inverse().cast<T>();
 
     // Estimates
-    const tvec_t tvec_est(tvec[0], tvec[1], tvec[2]);
+    tvec_t tvec_est(tvec[0], tvec[1], tvec[2]);
 
     // tvec residual
     const tvec_t tvec_res = tvec_est - tvec_meas;
@@ -75,6 +81,7 @@ class CameraPositionCostFunction {
 
  private:
   const Eigen::Vector3d t_;
+  const Eigen::Vector4d q_;
   const Eigen::Matrix<double, 3, 3> cov_;
 };
 

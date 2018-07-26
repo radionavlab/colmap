@@ -23,54 +23,62 @@
 
 using namespace colmap;
 
+namespace {
+    typedef Eigen::Matrix3d R_t;
+    typedef Eigen::Vector3d tvec_t;
+    typedef Eigen::Vector4d qvec_t;
+    typedef Eigen::Matrix<double, 9, 9> cov_t;
+}
+
 void ReadCameraMeasurements(const std::string& path,
                          std::vector<std::string>* image_names,
-                         std::vector<Eigen::Vector3d>* TvecPriorsGlobal,
-                         std::vector<Eigen::Vector3d>* TvecPriorsCamera,
-                         std::vector<Eigen::Matrix3d>* RvecPriorsCamera,
-                         std::vector< Eigen::Matrix<double, 6, 6> >* PriorsCovariance) {
+                         std::vector<tvec_t>* ricI_vec,
+                         std::vector<tvec_t>* rciC_vec,
+                         std::vector<R_t>* RIC_vec,
+                         std::vector<cov_t>* cov_vec) {
   std::vector<std::string> lines = ReadTextFileLines(path);
   for (const auto line : lines) {
     std::stringstream line_parser(line);
 
     // Buffers to store data in
     std::string image_name = "";
-    Eigen::Vector3d TvecPriorGlobal;
-    Eigen::Vector3d TvecPriorCamera;
-    Eigen::Matrix3d RvecPriorCamera;
-    Eigen::Matrix<double, 6, 6> PriorCovariance;
+    tvec_t ricI;
+    tvec_t rciC;
+    R_t RIC;
+    cov_t cov;
 
     // Read data into buffers
     // Translation
     line_parser >> 
         image_name >> 
-        TvecPriorGlobal(0) >> 
-        TvecPriorGlobal(1) >> 
-        TvecPriorGlobal(2) >> 
-        TvecPriorCamera(0) >>
-        TvecPriorCamera(1) >>
-        TvecPriorCamera(2);
+        ricI(0) >> 
+        ricI(1) >> 
+        ricI(2) >> 
+        rciC(0) >>
+        rciC(1) >>
+        rciC(2);
 
     // Rotation
     for(int i = 0; i < 3; i ++) {
         for(int j = 0; j < 3; j++) {
-            line_parser >> RvecPriorCamera(j, i);
+            line_parser >> RIC(j, i);
         }
     }
 
     // Covariance
-    for(int i = 0; i < 6; i++) {
-        for(int j = 0; j < 6; j++) {
-            line_parser >> PriorCovariance(j, i);
+    for(int i = 0; i < 9; i++) {
+        for(int j = 0; j < 9; j++) {
+            line_parser >> cov(j, i);
         }
     }
+    std::cout << cov << std::endl << std::endl;
 
     // Push data into vectors
     image_names->push_back(image_name);
-    TvecPriorsGlobal->push_back(TvecPriorGlobal);
-    TvecPriorsCamera->push_back(TvecPriorCamera);
-    RvecPriorsCamera->push_back(RvecPriorCamera);
-    PriorsCovariance->push_back(PriorCovariance);
+    ricI_vec->push_back(ricI);
+    rciC_vec->push_back(rciC);
+    RIC_vec->push_back(RIC);
+    cov_vec->push_back(cov);
   }
 }
 
@@ -100,24 +108,24 @@ int main(int argc, char** argv) {
 
   /* 1) Read in the camera measurements */
   std::vector<std::string> image_names;
-  std::vector<Eigen::Vector3d> TvecPriorsGlobal;
-  std::vector<Eigen::Vector3d> TvecPriorsCamera;
-  std::vector<Eigen::Matrix3d> RvecPriorsCamera;
-  std::vector< Eigen::Matrix<double, 6, 6> > PriorsCovariance;
+  std::vector<tvec_t> ricI_vec;
+  std::vector<tvec_t> rciC_vec;
+  std::vector<R_t> RIC_vec;
+  std::vector<cov_t> cov_vec;
   ReadCameraMeasurements(
           metadata_path, 
           &image_names, 
-          &TvecPriorsGlobal, 
-          &TvecPriorsCamera, 
-          &RvecPriorsCamera, 
-          &PriorsCovariance);
+          &ricI_vec, 
+          &rciC_vec, 
+          &RIC_vec, 
+          &cov_vec);
 
   /* 2) Align reconstruction with ECEF measurements to bring it into global frame. */
   RANSACOptions ransac_options;
   ransac_options.max_error = 0.01;
   bool alignment_success = reconstruction.AlignRobust(
           image_names,
-          TvecPriorsGlobal,
+          ricI_vec,
           3,
           ransac_options);
 
@@ -132,13 +140,13 @@ int main(int argc, char** argv) {
  
 
   /* 3) Insert the measurements into reconstruction */
-  std::unordered_map< std::string, std::tuple<Eigen::Vector3d, Eigen::Vector4d, Eigen::Matrix<double, 6, 6> > > image_priors;
-  for(size_t i = 0; i < TvecPriorsCamera.size(); i++) {
+  std::unordered_map< std::string, std::tuple<tvec_t, qvec_t, Eigen::Matrix<double, 6, 6> > > image_priors;
+  for(size_t i = 0; i < rciC_vec.size(); i++) {
     image_priors.insert({
                 image_names[i], 
-                std::make_tuple(TvecPriorsCamera[i], 
-                                RotationMatrixToQuaternion(RvecPriorsCamera[i]), 
-                                PriorsCovariance[i])
+                std::make_tuple(rciC_vec[i], 
+                                RotationMatrixToQuaternion(RIC_vec[i]), 
+                                cov_vec[i].topLeftCorner<6,6>())
     });
   }
 

@@ -399,6 +399,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
     problem_->AddResidualBlock(
       CameraPositionCostFunction::Create(
         image.TvecPrior(), 
+        image.QvecPrior(), 
         image.CovariancePrior().topLeftCorner(3,3)
       ), 
       NULL /* loss function */, 
