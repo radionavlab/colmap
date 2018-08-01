@@ -295,7 +295,6 @@ void Reconstruction::Normalize(const double extent, const double p0,
   CHECK_GE(p1, 0);
   CHECK_LE(p1, 1);
   CHECK_LE(p0, p1);
-  std::cout << std::endl << "NORMALIZING!!" << std::endl << std::endl;
 
   if ((use_images && reg_image_ids_.size() < 2) ||
       (!use_images && points3D_.size() < 2)) {
@@ -610,9 +609,6 @@ void Reconstruction::AddPriors(const std::unordered_map< std::string, std::tuple
             reimage.SetTvecPrior(std::get<0>(it->second));
             reimage.SetQvecPrior(std::get<1>(it->second));
             reimage.SetCovariancePrior(std::get<2>(it->second));
-
-            // reimage.SetTvec(std::get<0>(it->second));
-            // reimage.SetQvec(std::get<1>(it->second));
         }
     }
 

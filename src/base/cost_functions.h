@@ -144,10 +144,6 @@ class CameraPositionCostFunction {
     residuals[1] = res(1);
     residuals[2] = res(2);
 
-    // residuals[0] = T(0);
-    // residuals[1] = T(0);
-    // residuals[2] = T(0);
-
     return true;
   }
 
@@ -290,9 +286,6 @@ class BundleAdjustmentCostFunction {
     const T sig = T(5.0);
     residuals[0] = residuals[0] / sig;
     residuals[1] = residuals[1] / sig;
-
-    // residuals[0] = T(0);
-    // residuals[1] = T(0);
 
     return true;
   }
