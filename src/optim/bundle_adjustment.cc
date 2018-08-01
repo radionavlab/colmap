@@ -27,6 +27,7 @@
 #include "util/misc.h"
 #include "util/timer.h"
 
+
 namespace colmap {
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -277,7 +278,11 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   std::string solver_error;
   CHECK(solver_options.IsValid(&solver_error)) << solver_error;
 
+  reconstruction->PrintResiduals();
+  PrintCurrentCost();
   ceres::Solve(solver_options, problem_.get(), &summary_);
+  reconstruction->PrintResiduals();
+  PrintCurrentCost();
 
   if (solver_options.minimizer_progress_to_stdout) {
     std::cout << std::endl;
@@ -393,18 +398,17 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   // Collect cameras for final parameterization.
   CHECK(image.HasCamera());
 
-  const bool using_priors = image.HasTvecPrior();
-
-  if (using_priors) {
-    problem_->AddResidualBlock(
-      CameraPositionCostFunction::Create(
-        image.TvecPrior(), 
-        image.QvecPrior(), 
-        image.CovariancePrior().topLeftCorner(3,3)
+  if (options_.priors) {
+    const ceres::ResidualBlockId id = problem_->AddResidualBlock(
+      CameraPositionENUCostFunction::Create(
+        image.TvecPrior(),
+        image.CovariancePrior().bottomRightCorner<3,3>()
       ), 
       NULL /* loss function */, 
-      tvec_data
+      tvec_data,
+      qvec_data
     );
+    gps_residual_ids_.push_back(id);
   }
 
   const bool constant_pose = config_.HasConstantPose(image_id);
@@ -424,7 +428,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 
     ceres::CostFunction* cost_function = nullptr;
 
-    if (constant_pose && !using_priors) {
+    if (constant_pose && !options_.priors) {
       switch (camera.ModelId()) {
 #define CAMERA_MODEL_CASE(CameraModel)                                 \
   case CameraModel::kModelId:                                          \
@@ -438,8 +442,12 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 #undef CAMERA_MODEL_CASE
       }
 
-      problem_->AddResidualBlock(cost_function, loss_function,
-                                 point3D.XYZ().data(), camera_params_data);
+      const ceres::ResidualBlockId id = problem_->AddResidualBlock(
+          cost_function, 
+          loss_function,
+          point3D.XYZ().data(), 
+          camera_params_data);
+      reprojection_ids_.push_back(id);
     } else {
       switch (camera.ModelId()) {
 #define CAMERA_MODEL_CASE(CameraModel)                                   \
@@ -453,9 +461,14 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 #undef CAMERA_MODEL_CASE
       }
 
-      problem_->AddResidualBlock(cost_function, loss_function, qvec_data,
-                                 tvec_data, point3D.XYZ().data(),
-                                 camera_params_data);
+      const ceres::ResidualBlockId id = problem_->AddResidualBlock(
+          cost_function, 
+          loss_function, 
+          qvec_data,
+          tvec_data, 
+          point3D.XYZ().data(),
+          camera_params_data);
+      reprojection_ids_.push_back(id);
     }
   }
 
@@ -464,7 +477,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
      
     // Set pose parameterization.
     // If using priors, all poses can be changed. Parameterize all quaternions.
-    if (using_priors) {
+    if (options_.priors) {
       ceres::LocalParameterization* quaternion_parameterization =
           new ceres::QuaternionParameterization;
       problem_->SetParameterization(qvec_data, quaternion_parameterization);
@@ -530,8 +543,12 @@ void BundleAdjuster::AddPointToProblem(const point3D_t point3D_id,
 
 #undef CAMERA_MODEL_CASE
     }
-    problem_->AddResidualBlock(cost_function, loss_function,
-                               point3D.XYZ().data(), camera.ParamsData());
+    const ceres::ResidualBlockId id = problem_->AddResidualBlock(
+        cost_function,
+        loss_function,
+        point3D.XYZ().data(), 
+        camera.ParamsData());
+      reprojection_ids_.push_back(id);
   }
 }
 
@@ -1195,6 +1212,32 @@ void RigBundleAdjuster::ParameterizeCameraRigs(Reconstruction* reconstruction) {
         new ceres::QuaternionParameterization;
     problem_->SetParameterization(qvec_data, quaternion_parameterization);
   }
+}
+
+void BundleAdjuster::PrintCurrentCost() const {
+
+  std::cout << "=======================================================================" << std::endl;
+  {
+    ceres::Problem::EvaluateOptions options;
+    options.residual_blocks = reprojection_ids_;
+    double total_cost = 0.0;
+    std::vector<double> residuals;
+    problem_->Evaluate(options, &total_cost, &residuals, nullptr, nullptr);
+    std::cout << "Reprojection Cost: " << total_cost << std::endl;
+    // std::for_each(residuals.begin(), residuals.end(), [](const double& n){ std::cout << n << std::endl; });
+  }
+
+  {
+    ceres::Problem::EvaluateOptions options;
+    options.residual_blocks = gps_residual_ids_;
+    double total_cost = 0.0;
+    std::vector<double> residuals;
+    problem_->Evaluate(options, &total_cost, &residuals, nullptr, nullptr);
+    std::cout << "GPS Cost:          " << total_cost << std::endl;
+    // std::for_each(residuals.begin(), residuals.end(), [](const double& n){ std::cout << n << std::endl; });
+  }
+    std::cout << "=======================================================================" << std::endl;
+    std::cout << std::endl;
 }
 
 void PrintSolverSummary(const ceres::Solver::Summary& summary) {

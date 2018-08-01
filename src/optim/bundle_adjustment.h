@@ -148,6 +148,7 @@ class BundleAdjustmentConfig {
   const std::unordered_set<point3D_t>& ConstantPoints() const;
   const std::vector<int>& ConstantTvec(const image_t image_id) const;
 
+
  private:
   std::unordered_set<camera_t> constant_camera_ids_;
   std::unordered_set<image_t> image_ids_;
@@ -164,6 +165,9 @@ class BundleAdjuster {
   BundleAdjuster(const BundleAdjustmentOptions& ba_options, const BundleAdjustmentConfig& config);
 
   bool Solve(Reconstruction* reconstruction);
+
+  // Prints the current cost of the various residual blocks
+  void PrintCurrentCost() const;
 
   // Get the Ceres solver summary for the last call to `Solve`.
   const ceres::Solver::Summary& Summary() const;
@@ -190,6 +194,8 @@ class BundleAdjuster {
   ceres::Solver::Summary summary_;
   std::unordered_set<camera_t> camera_ids_;
   std::unordered_map<point3D_t, size_t> point3D_num_observations_;
+  std::vector<ceres::ResidualBlockId> reprojection_ids_;
+  std::vector<ceres::ResidualBlockId> gps_residual_ids_;
 };
 
 // Bundle adjustment using PBA (GPU or CPU). Less flexible and accurate than

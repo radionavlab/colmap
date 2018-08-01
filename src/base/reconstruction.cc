@@ -295,6 +295,7 @@ void Reconstruction::Normalize(const double extent, const double p0,
   CHECK_GE(p1, 0);
   CHECK_LE(p1, 1);
   CHECK_LE(p0, p1);
+  std::cout << std::endl << "NORMALIZING!!" << std::endl << std::endl;
 
   if ((use_images && reg_image_ids_.size() < 2) ||
       (!use_images && points3D_.size() < 2)) {
@@ -609,10 +610,88 @@ void Reconstruction::AddPriors(const std::unordered_map< std::string, std::tuple
             reimage.SetTvecPrior(std::get<0>(it->second));
             reimage.SetQvecPrior(std::get<1>(it->second));
             reimage.SetCovariancePrior(std::get<2>(it->second));
+
+            // reimage.SetTvec(std::get<0>(it->second));
+            // reimage.SetQvec(std::get<1>(it->second));
         }
     }
 
   return;
+}
+
+void Reconstruction::PrintResiduals() {
+	typedef struct {
+		void Print() const {
+			std::cout << "Position:    " << position_residual_.transpose() << std::endl;
+			std::cout << "Orientation: " << orientation_residual_.transpose() << std::endl;
+			std::cout << std::endl;
+		}
+
+		const Eigen::Vector3d position_residual_;
+		const Eigen::Vector4d orientation_residual_;
+  } Residual;
+
+	typedef struct { 
+		void Print() const {
+			std::cout << name_ << std::endl;
+			residual_.Print();	
+		}
+
+		const Residual residual_;
+		const std::string name_;
+	} CameraResidual;
+
+	std::cout << "Residuals: " << std::endl;
+	std::vector< CameraResidual > camera_residuals;
+  for (const auto& image : this->Images()) { 
+    class Image& img = this->Image(image.first);
+    const Eigen::Vector4d q_vec = img.Qvec();
+    const Eigen::Vector4d q_vec_prior = img.QvecPrior();
+    const Eigen::Quaterniond q_vec_eigen(
+        q_vec[0], 
+        q_vec[1], 
+        q_vec[2], 
+        q_vec[3]);
+    const Eigen::Quaterniond q_vec_prior_eigen(
+        q_vec_prior[0], 
+        q_vec_prior[1], 
+        q_vec_prior[2], 
+        q_vec_prior[3]);
+
+    const Eigen::Quaterniond q_diff = q_vec_eigen.inverse() * q_vec_prior_eigen;
+		const Residual res = { QuaternionToRotationMatrix(q_vec).transpose()*(-1*img.Tvec()) - img.TvecPrior(), Eigen::Vector4d(q_diff.w(), q_diff.x(), q_diff.y(), q_diff.z())};
+		const CameraResidual camera_res = {res, img.Name()};
+		camera_residuals.push_back(camera_res);	
+		// camera_res.Print();
+  }
+
+  // Accumulate
+  Eigen::Vector3d sum_position_residual(0,0,0);
+  std::vector< Eigen::Vector4d > quaternion_residuals;
+  for(const CameraResidual& res: camera_residuals) {
+    sum_position_residual = sum_position_residual + res.residual_.position_residual_;
+    quaternion_residuals.push_back(res.residual_.orientation_residual_);
+  }
+
+  // Average
+  std::vector<double> quaternion_weights;
+  quaternion_weights.resize(camera_residuals.size());
+  std::fill(quaternion_weights.begin(), quaternion_weights.end(), 1.0/camera_residuals.size());
+  const Eigen::Vector3d mean_position_residual = sum_position_residual / camera_residuals.size();
+  const Eigen::Vector4d mean_orientation_residual = AverageQuaternions(quaternion_residuals, quaternion_weights);
+
+  // Print
+  std::cout << "Mean position residual:    " << mean_position_residual.transpose() << std::endl;
+  std::cout << "Mean orientation residual: " << mean_orientation_residual.transpose() << std::endl;
+
+	Eigen::Matrix3d residual_spread;
+	for(const CameraResidual& res: camera_residuals) {
+		residual_spread = residual_spread + (res.residual_.position_residual_ - mean_position_residual) * (res.residual_.position_residual_ - mean_position_residual).transpose();
+	}
+	residual_spread = residual_spread / (camera_residuals.size() - 1);
+	std::cout << std::endl << "Position Residual spread: " << std::endl << residual_spread << std::endl;
+  std::cout << std::endl << "Determinant:              " << residual_spread.determinant() << std::endl;
+  std::cout << std::endl;
 }
 
 const class Image* Reconstruction::FindImageWithName(

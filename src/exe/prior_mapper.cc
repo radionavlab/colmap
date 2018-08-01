@@ -71,7 +71,6 @@ void ReadCameraMeasurements(const std::string& path,
             line_parser >> cov(j, i);
         }
     }
-    std::cout << cov << std::endl << std::endl;
 
     // Push data into vectors
     image_names->push_back(image_name);
@@ -144,9 +143,9 @@ int main(int argc, char** argv) {
   for(size_t i = 0; i < rciC_vec.size(); i++) {
     image_priors.insert({
                 image_names[i], 
-                std::make_tuple(rciC_vec[i], 
+                std::make_tuple(ricI_vec[i], 
                                 RotationMatrixToQuaternion(RIC_vec[i]), 
-                                cov_vec[i].topLeftCorner<6,6>())
+                                cov_vec[i].bottomRightCorner<6,6>())      // Bottom right corner is [eIC, ricI]
     });
   }
 
@@ -156,10 +155,13 @@ int main(int argc, char** argv) {
   // Configure BA
   options.bundle_adjustment->cov.compute = false;
   options.bundle_adjustment->priors = true;
+  // options.bundle_adjustment->refine_focal_length = true;
+  // options.bundle_adjustment->refine_extra_params = true;
+  // options.bundle_adjustment->refine_principal_point = true;
   // options.bundle_adjustment->loss_function_type = 
   //     BundleAdjustmentOptions::LossFunctionType::CAUCHY;
-  // options.bundle_adjustment->loss_function_scale = 1;
-  options.bundle_adjustment->solver_options.max_num_iterations = 1000;
+  // options.bundle_adjustment->loss_function_scale = 5;
+  options.bundle_adjustment->solver_options.max_num_iterations = 100;
 
   // Run BA
   BundleAdjustmentController ba_controller(options, &reconstruction);

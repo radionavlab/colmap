@@ -44,7 +44,6 @@ class BundleAdjustmentIterationCallback : public ceres::IterationCallback {
  private:
   Thread* thread_;
 };
-
 }  // namespace
 
 BundleAdjustmentController::BundleAdjustmentController(

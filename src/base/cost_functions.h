@@ -26,7 +26,75 @@
 
 namespace colmap {
 
-// Cost function to estimate camera pose given a measurement of its pose
+// Cost function to estimate camera pose given a measurement of its pose in the
+// ENU frame
+class CameraPositionENUCostFunction {
+ public:
+  CameraPositionENUCostFunction(const Eigen::Vector3d& ricI,
+                                const Eigen::Matrix3d& cov)
+      : ricI_(ricI),
+        cov_(cov)
+    {}
+
+  static ceres::CostFunction* Create(const Eigen::Vector3d& ricI,
+                                     const Eigen::Matrix3d& cov) {
+    return (new ceres::AutoDiffCostFunction<
+            CameraPositionENUCostFunction, 3, 3, 4>(
+        new CameraPositionENUCostFunction(ricI, cov)));
+  }
+
+  template <typename T>
+  bool operator()(const T* rciC, 
+                  const T* qic,
+                  T* residuals) const {
+
+    typedef Eigen::Matrix<T, 3, 1> tvec_t;
+    typedef Eigen::Matrix<T, 3, 3> cov_t;
+
+    // Measurements
+    const tvec_t ricI_meas = ricI_.cast<T>();
+    // const Eigen::Matrix3d cov = Eigen::Vector3d(0.0025, 0.0025, 0.0025).asDiagonal();
+
+    // Square root of information matrix
+    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
+    const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
+    const cov_t sqrt_info = lower.inverse().cast<T>();
+
+    // Estimates
+    T ricI[3];
+    T R_IFC[4]; 
+    T D_I2C[4]; 
+
+    std::memcpy(R_IFC, qic, 4*sizeof(T));
+    std::memcpy(D_I2C, R_IFC, 4*sizeof(T));
+
+    const T D_C2I[4] = { T(-1)*D_I2C[0], D_I2C[1], D_I2C[2], D_I2C[3] };
+    const T ricC[3] = { T(-1)*rciC[0], T(-1)*rciC[1], T(-1)*rciC[2] };
+
+    ceres::UnitQuaternionRotatePoint(D_C2I, ricC, ricI);
+
+    tvec_t ricI_est(ricI[0], ricI[1], ricI[2]);
+
+    // tvec residual
+    const tvec_t ricI_res = ricI_est - ricI_meas;
+
+    // Scale by square root info
+    tvec_t res = sqrt_info * ricI_res; 
+
+    // Output
+    residuals[0] = res(0);
+    residuals[1] = res(1);
+    residuals[2] = res(2);
+
+    return true;
+  }
+
+ private:
+  const Eigen::Vector3d ricI_;
+  const Eigen::Matrix3d cov_;
+};
+
+// Cost function to estimate camera pose given a measurement of its position
 class CameraPositionCostFunction {
  public:
   CameraPositionCostFunction(const Eigen::Vector3d& tvec,
@@ -54,8 +122,8 @@ class CameraPositionCostFunction {
 
     // Measurements
     const tvec_t tvec_meas = t_.cast<T>();
-    Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
-    Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
+    // Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
+    // Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
 
     // Square root of information matrix
     const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
@@ -69,12 +137,16 @@ class CameraPositionCostFunction {
     const tvec_t tvec_res = tvec_est - tvec_meas;
 
     // Scale by square root info
-    const tvec_t res = sqrt_info * tvec_res; 
+    tvec_t res = sqrt_info * tvec_res; 
 
     // Output
     residuals[0] = res(0);
     residuals[1] = res(1);
     residuals[2] = res(2);
+
+    // residuals[0] = T(0);
+    // residuals[1] = T(0);
+    // residuals[2] = T(0);
 
     return true;
   }
@@ -216,8 +288,11 @@ class BundleAdjustmentCostFunction {
 
     // Covariance of pixels. Assumed to be independent. Divide by standard deviation.
     const T sig = T(5.0);
-    residuals[0] /= sig;
-    residuals[1] /= sig;
+    residuals[0] = residuals[0] / sig;
+    residuals[1] = residuals[1] / sig;
+
+    // residuals[0] = T(0);
+    // residuals[1] = T(0);
 
     return true;
   }
