@@ -85,12 +85,14 @@ int main(int argc, char** argv) {
   InitializeGlog(argv);
 
   std::string import_path;
-  std::string export_path;
+  std::string priors_path;
+  std::string aligned_path;
   std::string metadata_path;
 
   OptionManager options;
   options.AddRequiredOption("import_path", &import_path);
-  options.AddRequiredOption("export_path", &export_path);
+  options.AddRequiredOption("priors_path", &priors_path);
+  options.AddRequiredOption("aligned_path", &aligned_path);
   options.AddRequiredOption("metadata_path", &metadata_path);
   options.AddBundleAdjustmentOptions();
   options.Parse(argc, argv);
@@ -130,8 +132,8 @@ int main(int argc, char** argv) {
 
   if (alignment_success) {
     std::cout << " => Alignment succeeded" << std::endl;
-    reconstruction.Write("sparse/aligned");
-    reconstruction.WriteText("sparse/aligned");
+    reconstruction.Write(aligned_path);
+    reconstruction.WriteText(aligned_path);
   } else {
     std::cout << " => Alignment failed" << std::endl;
     return EXIT_FAILURE;
@@ -169,8 +171,8 @@ int main(int argc, char** argv) {
   ba_controller.Wait();
 
   // Save output
-  reconstruction.Write("sparse/priors");
-  reconstruction.WriteText("sparse/priors");
+  reconstruction.Write(priors_path);
+  reconstruction.WriteText(priors_path);
   
   std::cout << "Success!" << std::endl;
 
