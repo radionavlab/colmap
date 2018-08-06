@@ -117,13 +117,13 @@ int main(int argc, char** argv) {
   // Load images and features from database
   Database db(*options.database_path);
   DatabaseCache db_cache;
-  const size_t min_num_matches = 5;
+  const size_t min_num_matches = 8;
   const bool ignore_watermarks = true;
   const std::set<std::string> image_cache_names;
   db_cache.Load(db, min_num_matches, ignore_watermarks, image_cache_names);
 
   // Set up reconstruction
-  std::cout << "Setting up reconstruction" << std::endl;
+  std::cout << "Setting up reconstruction..." << std::endl;
   {
     reconstruction.Load(db_cache);
     reconstruction.SetUp(&db_cache.SceneGraph());
@@ -196,20 +196,20 @@ int main(int argc, char** argv) {
   triangulator.MergeAllTracks(triangulator_options);
 
   const double max_reproj_error = 50.0;
-  const double min_tri_angle = 10; // deg
+  const double min_tri_angle = 15; // deg
   reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
   // reconstruction.FilterImages();
 
   // Run global BA
   options.bundle_adjustment->cov.compute = false;
   options.bundle_adjustment->priors = true;
-  // options.bundle_adjustment->refine_focal_length = true;
-  // options.bundle_adjustment->refine_extra_params = true;
+  options.bundle_adjustment->refine_focal_length = true;
+  options.bundle_adjustment->refine_extra_params = true;
   // options.bundle_adjustment->refine_principal_point = true;
   options.bundle_adjustment->loss_function_type = 
       BundleAdjustmentOptions::LossFunctionType::CAUCHY;
   options.bundle_adjustment->loss_function_scale = 1;
-  // options.bundle_adjustment->solver_options.max_num_iterations = 100;
+  options.bundle_adjustment->solver_options.max_num_iterations = 1000;
 
   BundleAdjustmentController ba_controller(options, &reconstruction);
   ba_controller.Start();

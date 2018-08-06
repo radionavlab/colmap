@@ -283,7 +283,7 @@ class BundleAdjustmentCostFunction {
     residuals[1] -= T(y_);
 
     // Covariance of pixels. Assumed to be independent. Divide by standard deviation.
-    const T sig = T(5.0);
+    const T sig = T(1.0);
     residuals[0] = residuals[0] / sig;
     residuals[1] = residuals[1] / sig;
 
