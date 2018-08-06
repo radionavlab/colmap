@@ -10,6 +10,7 @@ build/
 build-debug/
 build-release/
 build-relwithdeb/
+build-ssba/
 install-debug/
 install-release/
 data/

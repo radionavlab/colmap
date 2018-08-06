@@ -19,6 +19,8 @@
 #include "util/logging.h"
 #include "util/misc.h"
 #include "util/option_manager.h"
+#include "base/reconstruction_manager.h"
+#include "sfm/incremental_triangulator.h"
 #include <Eigen/Geometry>
 
 using namespace colmap;
@@ -85,8 +87,6 @@ int main(int argc, char** argv) {
   InitializeGlog(argv);
 
   std::string export_path;
-  std::string priors_path;
-  std::string aligned_path;
   std::string metadata_path;
 
   // ssba --database_path database.db --image_path images --metadata_path
@@ -112,23 +112,49 @@ int main(int argc, char** argv) {
   // Create a new reconstruction
   ReconstructionManager reconstruction_manager;
   const size_t reconstruction_idx = reconstruction_manager.Add();
-  Reconstruction& reconstruction = reconstruction_manager_->Get(reconstruction_idx);
+  Reconstruction& reconstruction = reconstruction_manager.Get(reconstruction_idx);
 
   // Load images and features from database
-  Database db(options.database_path_);
+  Database db(*options.database_path);
   DatabaseCache db_cache;
-  const size_t min_num_matches = static_cast<size_t>(options_->min_num_matches);
-  db_cache.Load(db, min_num_matches, options_->ignore_watermarks, options_->image_names);
+  const size_t min_num_matches = 5;
+  const bool ignore_watermarks = true;
+  const std::set<std::string> image_cache_names;
+  db_cache.Load(db, min_num_matches, ignore_watermarks, image_cache_names);
 
   // Set up reconstruction
-  reconstruction.Load(db_cache);
-  reconstruction.SetUp(&database_cache.SceneGraph());
+  std::cout << "Setting up reconstruction" << std::endl;
+  {
+    reconstruction.Load(db_cache);
+    reconstruction.SetUp(&db_cache.SceneGraph());
+    const EIGEN_STL_UMAP(image_t, class Image)& images = db_cache.Images();
+
+    for(auto it = images.begin(); it != images.end(); ++it) {
+      reconstruction.RegisterImage(it->first);
+    }
+  }
 
   // Add pre-computed params to camera
-  inline const EIGEN_STL_UMAP(camera_t, class Camera) & Cameras() const;
-  inline class Camera& Camera(const camera_t camera_id);
+  std::cout << "Loading camera params..." << std::endl;
+
+  const camera_t camera_id = 1;
+  const size_t width = 3840;
+  const size_t height = 2160;
+  const std::string params = "1662.07,1920,1080,-0.021983";
+
+  Camera& cam = reconstruction.Camera(camera_id);
+  cam.SetWidth(width);
+  cam.SetHeight(height);
+  cam.SetParamsFromString(params);
+
+  if(!cam.VerifyParams()) {
+    std::cerr << "Camera params wrong!" << std::endl;
+    return EXIT_FAILURE;
+  }
 
   // Load the priors.
+  std::cout << "Loading priors..." << std::endl;
+
   std::vector<std::string> image_names;
   std::vector<tvec_t> ricI_vec;
   std::vector<tvec_t> rciC_vec;
@@ -142,11 +168,12 @@ int main(int argc, char** argv) {
           &RIC_vec, 
           &cov_vec);
 
-  std::unordered_map< std::string, std::tuple<tvec_t, qvec_t, Eigen::Matrix<double, 6, 6> > > image_priors;
+  std::unordered_map< std::string, std::tuple<tvec_t, tvec_t, qvec_t, Eigen::Matrix<double, 6, 6> > > image_priors;
   for(size_t i = 0; i < rciC_vec.size(); i++) {
     image_priors.insert({
                 image_names[i], 
-                std::make_tuple(ricI_vec[i], 
+                std::make_tuple(ricI_vec[i],
+                                rciC_vec[i],
                                 RotationMatrixToQuaternion(RIC_vec[i]), 
                                 cov_vec[i].bottomRightCorner<6,6>())      // Bottom right corner is [eIC, ricI]
     });
@@ -155,11 +182,10 @@ int main(int argc, char** argv) {
   // Sets both prior and initial guess
   reconstruction.AddPriors(image_priors);
 
-  // Create triangulator
-  IncrementalTriangulator triangulator;
-  triangulator.reset(new IncrementalTriangulator(&database_cache_->SceneGraph(), reconstruction));
-
   // Triangulate the 3D position of all points
+  std::cout << "Triangulating..." << std::endl;
+
+  IncrementalTriangulator triangulator(&db_cache.SceneGraph(), &reconstruction);
   const std::vector<image_t>& image_ids = reconstruction.RegImageIds();
   const IncrementalTriangulator::Options triangulator_options;
   for(const image_t& image_id: image_ids) {
@@ -167,6 +193,12 @@ int main(int argc, char** argv) {
     triangulator.CompleteImage(triangulator_options, image_id);
   }
   triangulator.CompleteAllTracks(triangulator_options);
+  triangulator.MergeAllTracks(triangulator_options);
+
+  const double max_reproj_error = 50.0;
+  const double min_tri_angle = 10; // deg
+  reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+  // reconstruction.FilterImages();
 
   // Run global BA
   options.bundle_adjustment->cov.compute = false;
@@ -174,9 +206,9 @@ int main(int argc, char** argv) {
   // options.bundle_adjustment->refine_focal_length = true;
   // options.bundle_adjustment->refine_extra_params = true;
   // options.bundle_adjustment->refine_principal_point = true;
-  // options.bundle_adjustment->loss_function_type = 
-  //     BundleAdjustmentOptions::LossFunctionType::CAUCHY;
-  // options.bundle_adjustment->loss_function_scale = 5;
+  options.bundle_adjustment->loss_function_type = 
+      BundleAdjustmentOptions::LossFunctionType::CAUCHY;
+  options.bundle_adjustment->loss_function_scale = 1;
   // options.bundle_adjustment->solver_options.max_num_iterations = 100;
 
   BundleAdjustmentController ba_controller(options, &reconstruction);
@@ -184,8 +216,9 @@ int main(int argc, char** argv) {
   ba_controller.Wait();
 
   // Save output
-  reconstruction.Write(priors_path);
-  reconstruction.WriteText(priors_path);
+  // reconstruction.Write(export_path);
+  reconstruction.WriteText(export_path);
+  reconstruction.ExportPLY(export_path + "/model.ply");
   
   std::cout << "Success!" << std::endl;
 

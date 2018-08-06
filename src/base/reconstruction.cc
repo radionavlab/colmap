@@ -605,6 +605,7 @@ void Reconstruction::AddPriors(
     const std::unordered_map< std::string, 
                               std::tuple<
                                Eigen::Vector3d, 
+                               Eigen::Vector3d, 
                                Eigen::Vector4d, 
                                Eigen::Matrix<double, 6, 6> > > priors) {
   for (const auto& image : this->Images()) { 
@@ -614,12 +615,12 @@ void Reconstruction::AddPriors(
 
       // Set priors
       reimage.SetTvecPrior(std::get<0>(it->second));
-      reimage.SetQvecPrior(std::get<1>(it->second));
-      reimage.SetCovariancePrior(std::get<2>(it->second));
+      reimage.SetQvecPrior(std::get<2>(it->second));
+      reimage.SetCovariancePrior(std::get<3>(it->second));
 
       // Also set as initial guess
-      reimage.SetTvec(std::get<0>(it->second));
-      reimage.SetQvec(std::get<1>(it->second));
+      reimage.SetTvec(std::get<1>(it->second));
+      reimage.SetQvec(std::get<2>(it->second));
     }
   }
 
