@@ -195,25 +195,44 @@ int main(int argc, char** argv) {
   triangulator.CompleteAllTracks(triangulator_options);
   triangulator.MergeAllTracks(triangulator_options);
 
-  const double max_reproj_error = 50.0;
-  const double min_tri_angle = 15; // deg
-  reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
-  // reconstruction.FilterImages();
+  // Run robust global BA
+  {
+    OptionManager options_(options);
+    options_.bundle_adjustment->priors = true;
+    options_.bundle_adjustment->loss_function_type = 
+        BundleAdjustmentOptions::LossFunctionType::CAUCHY;
+    options_.bundle_adjustment->loss_function_scale = 1;
+    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+    options_.bundle_adjustment->refine_focal_length = false;
+    options_.bundle_adjustment->refine_extra_params = false;
 
-  // Run global BA
-  options.bundle_adjustment->cov.compute = false;
-  options.bundle_adjustment->priors = true;
-  options.bundle_adjustment->refine_focal_length = true;
-  options.bundle_adjustment->refine_extra_params = true;
-  // options.bundle_adjustment->refine_principal_point = true;
-  options.bundle_adjustment->loss_function_type = 
-      BundleAdjustmentOptions::LossFunctionType::CAUCHY;
-  options.bundle_adjustment->loss_function_scale = 1;
-  options.bundle_adjustment->solver_options.max_num_iterations = 1000;
+    BundleAdjustmentController ba_controller(options_, &reconstruction);
+    ba_controller.Start();
+    ba_controller.Wait();
+  }
 
-  BundleAdjustmentController ba_controller(options, &reconstruction);
-  ba_controller.Start();
-  ba_controller.Wait();
+  // Remove bad points
+  {
+    const double max_reproj_error = 4.0;
+    const double min_tri_angle = 10; // deg
+    reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+  }
+
+  // Run strict global BA
+  {
+    OptionManager options_(options);
+    options_.bundle_adjustment->priors = true;
+    options_.bundle_adjustment->loss_function_type = 
+        BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
+    options_.bundle_adjustment->loss_function_scale = 1;
+    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+    options_.bundle_adjustment->refine_focal_length = true;
+    options_.bundle_adjustment->refine_extra_params = true;
+
+    BundleAdjustmentController ba_controller(options_, &reconstruction);
+    ba_controller.Start();
+    ba_controller.Wait();
+  }
 
   // Save output
   // reconstruction.Write(export_path);
