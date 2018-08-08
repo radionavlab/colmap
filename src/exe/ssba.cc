@@ -227,13 +227,13 @@ int main(int argc, char** argv) {
   // Filter points
   std::cout << "Filtering 3D points..." << std::endl;
   {
-    const double max_reproj_error = 10.0;
+    const double max_reproj_error = 4.0;
     const double min_tri_angle = 10; // deg
     reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
   }
 
   // Iteratively run global BA
-  for(size_t i = 0; i < 3; i++) {
+  for(size_t i = 0; i < 5; i++) {
 
     // Run strict global BA
     std::cout << "Running strict global BA..." << std::endl;
