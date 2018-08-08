@@ -196,6 +196,7 @@ int main(int argc, char** argv) {
   triangulator.MergeAllTracks(triangulator_options);
 
   // Run robust global BA
+  std::cout << "Running robust global BA..." << std::endl;
   {
     OptionManager options_(options);
     options_.bundle_adjustment->priors = true;
@@ -211,7 +212,13 @@ int main(int argc, char** argv) {
     ba_controller.Wait();
   }
 
+  std::cout << "Retriangulating..." << std::endl;
+  triangulator.Retriangulate(triangulator_options);
+  triangulator.CompleteAllTracks(triangulator_options);
+  triangulator.MergeAllTracks(triangulator_options);
+
   // Remove bad points
+  std::cout << "Filtering 3D points..." << std::endl;
   {
     const double max_reproj_error = 4.0;
     const double min_tri_angle = 10; // deg
@@ -219,6 +226,7 @@ int main(int argc, char** argv) {
   }
 
   // Run strict global BA
+  std::cout << "Running strict global BA..." << std::endl;
   {
     OptionManager options_(options);
     options_.bundle_adjustment->priors = true;
@@ -234,7 +242,16 @@ int main(int argc, char** argv) {
     ba_controller.Wait();
   }
 
+  // Remove bad points
+  std::cout << "Filtering 3D points..." << std::endl;
+  {
+    const double max_reproj_error = 4.0;
+    const double min_tri_angle = 10; // deg
+    reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+  }
+
   // Save output
+  std::cout << "Saving output..." << std::endl;
   // reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
   reconstruction.ExportPLY(export_path + "/model.ply");
