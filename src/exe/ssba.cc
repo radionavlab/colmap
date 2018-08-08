@@ -195,66 +195,84 @@ int main(int argc, char** argv) {
   triangulator.CompleteAllTracks(triangulator_options);
   triangulator.MergeAllTracks(triangulator_options);
 
-  // Run robust global BA
-  std::cout << "Running robust global BA..." << std::endl;
-  {
-    OptionManager options_(options);
-    options_.bundle_adjustment->priors = true;
-    options_.bundle_adjustment->loss_function_type = 
-        BundleAdjustmentOptions::LossFunctionType::CAUCHY;
-    options_.bundle_adjustment->loss_function_scale = 1;
-    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
-    options_.bundle_adjustment->refine_focal_length = false;
-    options_.bundle_adjustment->refine_extra_params = false;
+  for(size_t i = 0; i < 2; i++) {
+    if(i != 0) {
+      // Retriangulate
+      std::cout << "Retriangulating..." << std::endl;
+      {
+        triangulator.Retriangulate(triangulator_options);
+        triangulator.CompleteAllTracks(triangulator_options);
+        triangulator.MergeAllTracks(triangulator_options);
+      }
+    }
 
-    BundleAdjustmentController ba_controller(options_, &reconstruction);
-    ba_controller.Start();
-    ba_controller.Wait();
+    // Run robust global BA
+    std::cout << "Running robust global BA..." << std::endl;
+    {
+      OptionManager options_(options);
+      options_.bundle_adjustment->priors = true;
+      options_.bundle_adjustment->loss_function_type = 
+          BundleAdjustmentOptions::LossFunctionType::CAUCHY;
+      options_.bundle_adjustment->loss_function_scale = 1;
+      options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+      options_.bundle_adjustment->refine_focal_length = false;
+      options_.bundle_adjustment->refine_extra_params = false;
+
+      BundleAdjustmentController ba_controller(options_, &reconstruction);
+      ba_controller.Start();
+      ba_controller.Wait();
+    }
   }
 
-  std::cout << "Retriangulating..." << std::endl;
-  triangulator.Retriangulate(triangulator_options);
-  triangulator.CompleteAllTracks(triangulator_options);
-  triangulator.MergeAllTracks(triangulator_options);
-
-  // Remove bad points
+  // Filter points
   std::cout << "Filtering 3D points..." << std::endl;
   {
-    const double max_reproj_error = 4.0;
+    const double max_reproj_error = 10.0;
     const double min_tri_angle = 10; // deg
     reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
   }
 
-  // Run strict global BA
-  std::cout << "Running strict global BA..." << std::endl;
-  {
-    OptionManager options_(options);
-    options_.bundle_adjustment->priors = true;
-    options_.bundle_adjustment->loss_function_type = 
-        BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
-    options_.bundle_adjustment->loss_function_scale = 1;
-    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
-    options_.bundle_adjustment->refine_focal_length = true;
-    options_.bundle_adjustment->refine_extra_params = true;
+  // Iteratively run global BA
+  for(size_t i = 0; i < 3; i++) {
 
-    BundleAdjustmentController ba_controller(options_, &reconstruction);
-    ba_controller.Start();
-    ba_controller.Wait();
-  }
+    // Run strict global BA
+    std::cout << "Running strict global BA..." << std::endl;
+    {
+      OptionManager options_(options);
+      options_.bundle_adjustment->priors = true;
+      options_.bundle_adjustment->loss_function_type = 
+          BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
+      options_.bundle_adjustment->loss_function_scale = 1;
+      options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+      options_.bundle_adjustment->refine_focal_length = true;
+      options_.bundle_adjustment->refine_extra_params = true;
 
-  // Remove bad points
-  std::cout << "Filtering 3D points..." << std::endl;
-  {
-    const double max_reproj_error = 4.0;
-    const double min_tri_angle = 10; // deg
-    reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+      BundleAdjustmentController ba_controller(options_, &reconstruction);
+      ba_controller.Start();
+      ba_controller.Wait();
+    }
+
+    // Complete and merge 3D point tracks
+    std::cout << "Completing and merging tracks..." << std::endl;
+    {
+      triangulator.CompleteAllTracks(triangulator_options);
+      triangulator.MergeAllTracks(triangulator_options);
+    }
+
+    // Filter points
+    std::cout << "Filtering 3D points..." << std::endl;
+    {
+      const double max_reproj_error = 4.0;
+      const double min_tri_angle = 10; // deg
+      reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+    }
   }
 
   // Save output
   std::cout << "Saving output..." << std::endl;
   // reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
-  reconstruction.ExportPLY(export_path + "/model.ply");
+  // reconstruction.ExportPLY(export_path + "/model.ply");
   
   std::cout << "Success!" << std::endl;
 
