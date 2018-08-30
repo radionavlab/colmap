@@ -34,7 +34,7 @@ COLMAP_ADD_EXECUTABLE(mapper mapper.cc)
 
 # COLMAP_ADD_EXECUTABLE(model_analyzer model_analyzer.cc)
 
-COLMAP_ADD_EXECUTABLE(model_converter model_converter.cc)
+# COLMAP_ADD_EXECUTABLE(model_converter model_converter.cc)
 
 # COLMAP_ADD_EXECUTABLE(model_merger model_merger.cc)
 
@@ -50,13 +50,13 @@ COLMAP_ADD_EXECUTABLE(model_converter model_converter.cc)
 
 # COLMAP_ADD_EXECUTABLE(transitive_matcher transitive_matcher.cc)
 
-# COLMAP_ADD_EXECUTABLE(vocab_tree_builder vocab_tree_builder.cc)
+COLMAP_ADD_EXECUTABLE(vocab_tree_builder vocab_tree_builder.cc)
 
-# COLMAP_ADD_EXECUTABLE(vocab_tree_matcher vocab_tree_matcher.cc)
+COLMAP_ADD_EXECUTABLE(vocab_tree_matcher vocab_tree_matcher.cc)
 
-# COLMAP_ADD_EXECUTABLE(vocab_tree_retriever vocab_tree_retriever.cc)
+COLMAP_ADD_EXECUTABLE(vocab_tree_retriever vocab_tree_retriever.cc)
 
-COLMAP_ADD_EXECUTABLE(prior_mapper prior_mapper.cc)
+# COLMAP_ADD_EXECUTABLE(prior_mapper prior_mapper.cc)
 
 # if(CUDA_ENABLED)
 #     COLMAP_ADD_EXECUTABLE(dense_stereo dense_stereo.cc)

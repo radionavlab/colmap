@@ -15,6 +15,19 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     set(IS_CLANG TRUE)
 endif()
 
+# Determine project architecture.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "[ix].?86|amd64|AMD64")
+  set(IS_X86 TRUE)
+endif()
+
+# Determine project operating system
+string(REGEX MATCH "Linux" IS_LINUX ${CMAKE_SYSTEM_NAME})
+string(REGEX MATCH "DragonFLY|BSD" IS_BSD ${CMAKE_SYSTEM_NAME})
+string(REGEX MATCH "SunOS" IS_SOLARIS ${CMAKE_SYSTEM_NAME})
+
+
+
+
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWER)
 if(CMAKE_BUILD_TYPE_LOWER STREQUAL "debug"
    OR CMAKE_BUILD_TYPE_LOWER STREQUAL "relwithdebinfo")

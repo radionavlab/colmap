@@ -19,7 +19,7 @@ set(COLMAP_LIBRARIES
     controllers
     base
     feature
-    ui
+    # ui
     util
     controllers
     mvs
@@ -27,7 +27,7 @@ set(COLMAP_LIBRARIES
     estimators
     base
     feature
-    ui
+    # ui
     util
     estimators
     optim
@@ -84,7 +84,7 @@ add_subdirectory(optim)
 add_subdirectory(retrieval)
 add_subdirectory(sfm)
 add_subdirectory(tools)
-add_subdirectory(ui)
+# add_subdirectory(ui)
 add_subdirectory(util)
 
 # This macro will search for source files in a given directory, will add them
@@ -131,7 +131,7 @@ ADD_SOURCE_DIR(optim OPTIM_SRC *.h *.cc)
 ADD_SOURCE_DIR(retrieval RETRIEVAL_SRC *.h *.cc)
 ADD_SOURCE_DIR(sfm SFM_SRC *.h *.cc)
 ADD_SOURCE_DIR(tools TOOLS_SRC *.h *.cc)
-ADD_SOURCE_DIR(ui UI_SRC *.h *.cc)
+# ADD_SOURCE_DIR(ui UI_SRC *.h *.cc)
 ADD_SOURCE_DIR(util UTIL_SRC *.h *.cc)
 
 # Add all of the source files to a regular library target, as using a custom

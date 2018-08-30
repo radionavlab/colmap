@@ -17,7 +17,7 @@ include(CheckCXXCompilerFlag)
 # the CMake policies in this file
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeHelper.cmake NO_POLICY_SCOPE)
 
-include(${CMAKE_SOURCE_DIR}/cmake/CheckSSEExtensions.cmake)
+
 
 if(EXISTS ${CMAKE_SOURCE_DIR}/LocalConfig.cmake)
     include(${CMAKE_SOURCE_DIR}/LocalConfig.cmake)
@@ -28,10 +28,11 @@ endif()
 # Options
 ################################################################################
 
+option(SIMD_ENABLED "Whether to enable SIMD optimizations" ON)
 option(OPENMP_ENABLED "Whether to enable OpenMP" ON)
 option(IPO_ENABLED "Whether to enable interprocedural optimization" ON)
-option(CUDA_ENABLED "Whether to enable CUDA, if available" ON)
-option(OPENGL_ENABLED "Whether to enable OpenGL, if available" ON)
+option(CUDA_ENABLED "Whether to enable CUDA, if available" OFF)
+option(OPENGL_ENABLED "Whether to enable OpenGL, if available" OFF)
 option(TESTS_ENABLED "Whether to build test binaries" OFF)
 option(PROFILING_ENABLED "Whether to enable google-perftools linker flags" OFF)
 option(BOOST_STATIC "Whether to enable static boost library linker flags" ON)

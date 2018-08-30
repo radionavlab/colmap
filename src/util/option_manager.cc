@@ -28,7 +28,7 @@
 #include "mvs/meshing.h"
 #include "mvs/patch_match.h"
 #include "optim/bundle_adjustment.h"
-#include "ui/render_options.h"
+// #include "ui/render_options.h"
 #include "util/misc.h"
 #include "util/version.h"
 
@@ -54,7 +54,7 @@ OptionManager::OptionManager() {
   dense_stereo.reset(new mvs::PatchMatchOptions());
   dense_fusion.reset(new mvs::StereoFusionOptions());
   dense_meshing.reset(new mvs::PoissonReconstructionOptions());
-  render.reset(new RenderOptions());
+  // render.reset(new RenderOptions());
 
   Reset();
 
@@ -92,7 +92,7 @@ void OptionManager::AddAllOptions() {
   AddDenseStereoOptions();
   AddDenseFusionOptions();
   AddDenseMeshingOptions();
-  AddRenderOptions();
+  // AddRenderOptions();
 }
 
 void OptionManager::AddLogOptions() {
@@ -531,22 +531,22 @@ void OptionManager::AddDenseMeshingOptions() {
                               &dense_meshing->num_threads);
 }
 
-void OptionManager::AddRenderOptions() {
-  if (added_render_options_) {
-    return;
-  }
-  added_render_options_ = true;
-
-  AddAndRegisterDefaultOption("Render.min_track_len", &render->min_track_len);
-  AddAndRegisterDefaultOption("Render.max_error", &render->max_error);
-  AddAndRegisterDefaultOption("Render.refresh_rate", &render->refresh_rate);
-  AddAndRegisterDefaultOption("Render.adapt_refresh_rate",
-                              &render->adapt_refresh_rate);
-  AddAndRegisterDefaultOption("Render.image_connections",
-                              &render->image_connections);
-  AddAndRegisterDefaultOption("Render.projection_type",
-                              &render->projection_type);
-}
+// void OptionManager::AddRenderOptions() {
+//   if (added_render_options_) {
+//     return;
+//   }
+//   added_render_options_ = true;
+// 
+//   AddAndRegisterDefaultOption("Render.min_track_len", &render->min_track_len);
+//   AddAndRegisterDefaultOption("Render.max_error", &render->max_error);
+//   AddAndRegisterDefaultOption("Render.refresh_rate", &render->refresh_rate);
+//   AddAndRegisterDefaultOption("Render.adapt_refresh_rate",
+//                               &render->adapt_refresh_rate);
+//   AddAndRegisterDefaultOption("Render.image_connections",
+//                               &render->image_connections);
+//   AddAndRegisterDefaultOption("Render.projection_type",
+//                               &render->projection_type);
+// }
 
 void OptionManager::Reset() {
   FLAGS_logtostderr = false;
@@ -569,7 +569,7 @@ void OptionManager::Reset() {
   *dense_stereo = mvs::PatchMatchOptions();
   *dense_fusion = mvs::StereoFusionOptions();
   *dense_meshing = mvs::PoissonReconstructionOptions();
-  *render = RenderOptions();
+  // *render = RenderOptions();
 
   desc_.reset(new boost::program_options::options_description());
 
@@ -593,7 +593,7 @@ void OptionManager::Reset() {
   added_dense_stereo_options_ = false;
   added_dense_fusion_options_ = false;
   added_dense_meshing_options_ = false;
-  added_render_options_ = false;
+  // added_render_options_ = false;
 }
 
 bool OptionManager::Check() {
@@ -623,7 +623,7 @@ bool OptionManager::Check() {
   if (dense_fusion) success = success && dense_fusion->Check();
   if (dense_meshing) success = success && dense_meshing->Check();
 
-  if (render) success = success && render->Check();
+  // if (render) success = success && render->Check();
 
   return success;
 }
