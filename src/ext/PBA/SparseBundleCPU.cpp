@@ -56,14 +56,6 @@ using std::max;
 #include <arm_neon.h>
 #define CPUPBA_USE_NEON
 #endif
-#elif defined(__AVX__) && !defined(DISABLE_CPU_AVX)
-#include <immintrin.h>
-#undef CPUPBA_USE_SSE
-#undef POINT_DATA_ALIGN4
-#elif (defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86) && _M_IX86_FP >= 2)) && !defined(DISABLE_CPU_SSE)
-#define CPUPBA_USE_SSE
-#include <xmmintrin.h>
-#include <emmintrin.h>
 #endif
 
 #ifdef POINT_DATA_ALIGN4

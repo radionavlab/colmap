@@ -1,5 +1,10 @@
-if(NOT IS_MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wno-narrowing")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm.*|ARM.*)" OR "^(aarch64.*|AARCH64.*)")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm.*|ARM.*)")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -O3 -pthread -march=arm")
+  endif()
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -O3 -pthread -march=aarch64")
+  endif()
 endif()
 
 if(NOT SIMD_ENABLED)
