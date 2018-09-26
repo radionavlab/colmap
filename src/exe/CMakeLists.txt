@@ -44,7 +44,7 @@ COLMAP_ADD_EXECUTABLE(mapper mapper.cc)
 
 # COLMAP_ADD_EXECUTABLE(rig_bundle_adjuster rig_bundle_adjuster.cc)
 
-# COLMAP_ADD_EXECUTABLE(sequential_matcher sequential_matcher)
+COLMAP_ADD_EXECUTABLE(sequential_matcher sequential_matcher)
 
 # COLMAP_ADD_EXECUTABLE(spatial_matcher spatial_matcher.cc)
 
