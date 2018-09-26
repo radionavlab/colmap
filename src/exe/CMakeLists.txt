@@ -14,9 +14,9 @@ set(FOLDER_NAME "exe")
 
 # COLMAP_ADD_EXECUTABLE(dense_mesher dense_mesher.cc)
 
-COLMAP_ADD_EXECUTABLE(exhaustive_matcher exhaustive_matcher.cc)
+# COLMAP_ADD_EXECUTABLE(exhaustive_matcher exhaustive_matcher.cc)
 
-COLMAP_ADD_EXECUTABLE(feature_extractor feature_extractor.cc)
+# COLMAP_ADD_EXECUTABLE(feature_extractor feature_extractor.cc)
 
 # COLMAP_ADD_EXECUTABLE(feature_importer feature_importer.cc)
 
@@ -26,7 +26,7 @@ COLMAP_ADD_EXECUTABLE(feature_extractor feature_extractor.cc)
 
 # COLMAP_ADD_EXECUTABLE(image_undistorter image_undistorter.cc)
 
-COLMAP_ADD_EXECUTABLE(mapper mapper.cc)
+# COLMAP_ADD_EXECUTABLE(mapper mapper.cc)
 
 # COLMAP_ADD_EXECUTABLE(matches_importer matches_importer.cc)
 
@@ -57,6 +57,9 @@ COLMAP_ADD_EXECUTABLE(vocab_tree_matcher vocab_tree_matcher.cc)
 COLMAP_ADD_EXECUTABLE(vocab_tree_retriever vocab_tree_retriever.cc)
 
 # COLMAP_ADD_EXECUTABLE(prior_mapper prior_mapper.cc)
+
+COLMAP_ADD_EXECUTABLE(ssba ssba.cc)
+
 
 # if(CUDA_ENABLED)
 #     COLMAP_ADD_EXECUTABLE(dense_stereo dense_stereo.cc)
