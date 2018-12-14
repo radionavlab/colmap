@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_RETRIEVAL_INVERTED_INDEX_H_
 #define COLMAP_SRC_RETRIEVAL_INVERTED_INDEX_H_
@@ -44,6 +59,7 @@ class InvertedIndex {
   const static int kInvalidWordId;
   typedef Eigen::Matrix<kDescType, Eigen::Dynamic, kDescDim, Eigen::RowMajor>
       DescType;
+  typedef typename InvertedFile<kEmbeddingDim>::EntryType EntryType;
   typedef typename InvertedFile<kEmbeddingDim>::GeomType GeomType;
   typedef Eigen::Matrix<float, Eigen::Dynamic, kDescDim> ProjMatrixType;
   typedef Eigen::VectorXf ProjDescType;
@@ -70,6 +86,7 @@ class InvertedIndex {
 
   // Add single entry to the index.
   void AddEntry(const int image_id, const int word_id,
+                typename DescType::Index feature_idx,
                 const DescType& descriptor, const GeomType& geometry);
 
   // Clear all index entries.
@@ -79,8 +96,14 @@ class InvertedIndex {
   void Query(const DescType& descriptors, const Eigen::MatrixXi& word_ids,
              std::vector<ImageScore>* image_scores) const;
 
+  void ConvertToBinaryDescriptor(
+      const int word_id, const DescType& descriptor,
+      std::bitset<kEmbeddingDim>* binary_descriptor) const;
+
+  float GetIDFWeight(const int word_id) const;
+
   void FindMatches(const int word_id, const std::unordered_set<int>& image_ids,
-                   std::vector<std::pair<int, GeomType>>* matches) const;
+                   std::vector<const EntryType*>* matches) const;
 
   // Compute the self-similarity for the image.
   float ComputeSelfSimilarity(const Eigen::MatrixXi& word_ids) const;
@@ -102,7 +125,7 @@ class InvertedIndex {
 
   // For each image in the database, a normalization factor to be used to
   // normalize the votes.
-  std::vector<float> normalization_constants_;
+  std::unordered_map<int, float> normalization_constants_;
 
   // The projection matrix used to project SIFT descriptors.
   ProjMatrixType proj_matrix_;
@@ -196,12 +219,13 @@ void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::ComputeHammingEmbedding(
 
 template <typename kDescType, int kDescDim, int kEmbeddingDim>
 void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::AddEntry(
-    const int image_id, const int word_id, const DescType& descriptor,
-    const GeomType& geometry) {
+    const int image_id, const int word_id, typename DescType::Index feature_idx,
+    const DescType& descriptor, const GeomType& geometry) {
   CHECK_EQ(descriptor.size(), kDescDim);
   const ProjDescType proj_desc =
       proj_matrix_ * descriptor.transpose().template cast<float>();
-  inverted_files_.at(word_id).AddEntry(image_id, proj_desc, geometry);
+  inverted_files_.at(word_id)
+      .AddEntry(image_id, feature_idx, proj_desc, geometry);
 }
 
 template <typename kDescType, int kDescDim, int kEmbeddingDim>
@@ -264,14 +288,31 @@ void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::Query(
 }
 
 template <typename kDescType, int kDescDim, int kEmbeddingDim>
+void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::ConvertToBinaryDescriptor(
+    const int word_id,
+    const DescType& descriptor,
+    std::bitset<kEmbeddingDim>* binary_descriptor) const {
+  const ProjDescType proj_desc =
+      proj_matrix_ * descriptor.transpose().template cast<float>();
+  inverted_files_.at(word_id)
+      .ConvertToBinaryDescriptor(proj_desc, binary_descriptor);
+}
+
+template <typename kDescType, int kDescDim, int kEmbeddingDim>
+float InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::GetIDFWeight(
+    const int word_id) const {
+  return inverted_files_.at(word_id).IDFWeight();
+}
+
+template <typename kDescType, int kDescDim, int kEmbeddingDim>
 void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::FindMatches(
     const int word_id, const std::unordered_set<int>& image_ids,
-    std::vector<std::pair<int, GeomType>>* matches) const {
+    std::vector<const EntryType*>* matches) const {
   matches->clear();
   const auto& entries = inverted_files_.at(word_id).GetEntries();
   for (const auto& entry : entries) {
     if (image_ids.count(entry.image_id)) {
-      matches->emplace_back(entry.image_id, entry.geometry);
+      matches->emplace_back(&entry);
     }
   }
 }
@@ -329,10 +370,14 @@ void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::Read(
   ifs->read(reinterpret_cast<char*>(&num_images), sizeof(int32_t));
   CHECK_GE(num_images, 0);
 
-  normalization_constants_.resize(num_images);
-  for (int32_t image_id = 0; image_id < num_images; ++image_id) {
-    ifs->read(reinterpret_cast<char*>(&normalization_constants_[image_id]),
-              sizeof(float));
+  normalization_constants_.clear();
+  normalization_constants_.reserve(num_images);
+  for (int32_t i = 0; i < num_images; ++i) {
+    int image_id;
+    float value;
+    ifs->read(reinterpret_cast<char*>(&image_id), sizeof(int));
+    ifs->read(reinterpret_cast<char*>(&value), sizeof(float));
+    normalization_constants_[image_id] = value;
   }
 }
 
@@ -362,10 +407,9 @@ void InvertedIndex<kDescType, kDescDim, kEmbeddingDim>::Write(
   const int32_t num_images = normalization_constants_.size();
   ofs->write(reinterpret_cast<const char*>(&num_images), sizeof(int32_t));
 
-  for (int32_t image_id = 0; image_id < num_images; ++image_id) {
-    ofs->write(
-        reinterpret_cast<const char*>(&normalization_constants_[image_id]),
-        sizeof(float));
+  for (const auto& constant : normalization_constants_) {
+    ofs->write(reinterpret_cast<const char*>(&constant.first), sizeof(int));
+    ofs->write(reinterpret_cast<const char*>(&constant.second), sizeof(float));
   }
 }
 
@@ -379,22 +423,19 @@ void InvertedIndex<kDescType, kDescDim,
     inverted_file.ComputeIDFWeight(image_ids.size());
   }
 
-  const int max_image_id =
-      *std::max_element(image_ids.begin(), image_ids.end());
-
-  std::vector<double> self_similarities(max_image_id + 1, 0.0);
+  std::unordered_map<int, double> self_similarities(image_ids.size());
   for (const auto& inverted_file : inverted_files_) {
     inverted_file.ComputeImageSelfSimilarities(&self_similarities);
   }
 
-  normalization_constants_.resize(max_image_id + 1);
-  for (int image_id = 0; image_id <= max_image_id; ++image_id) {
-    const double self_similarity = self_similarities.at(image_id);
-    if (self_similarity > 0.0) {
-      normalization_constants_.at(image_id) =
-          static_cast<float>(1.0 / std::sqrt(self_similarity));
+  normalization_constants_.clear();
+  normalization_constants_.reserve(image_ids.size());
+  for (const auto& self_similarity : self_similarities) {
+    if (self_similarity.second > 0.0) {
+      normalization_constants_[self_similarity.first] =
+          static_cast<float>(1.0 / std::sqrt(self_similarity.second));
     } else {
-      normalization_constants_.at(image_id) = 0.0f;
+      normalization_constants_[self_similarity.first] = 0.0f;
     }
   }
 }

@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_MVS_MODEL_H_
 #define COLMAP_SRC_MVS_MODEL_H_
@@ -46,15 +61,18 @@ struct Model {
   void ReadFromCOLMAP(const std::string& path);
   void ReadFromPMVS(const std::string& path);
 
-  // Get the image identifier for the given image name.
-  int GetImageId(const std::string& name) const;
-  std::string GetImageName(const int image_id) const;
+  // Get the image index for the given image name.
+  int GetImageIdx(const std::string& name) const;
+  std::string GetImageName(const int image_idx) const;
 
   // For each image, determine the maximally overlapping images, sorted based on
   // the number of shared points subject to a minimum robust average
   // triangulation angle of the points.
   std::vector<std::vector<int>> GetMaxOverlappingImages(
       const size_t num_images, const double min_triangulation_angle) const;
+
+  // Get the overlapping images defined in the vis.dat file.
+  const std::vector<std::vector<int>>& GetMaxOverlappingImagesFromPMVS() const;
 
   // Compute the robust minimum and maximum depths from the sparse point cloud.
   std::vector<std::pair<float, float>> ComputeDepthRanges() const;
@@ -66,12 +84,22 @@ struct Model {
   std::vector<std::map<int, float>> ComputeTriangulationAngles(
       const float percentile = 50) const;
 
+  // Note that in case the data is read from a COLMAP reconstruction, the index
+  // of an image or point does not correspond to its original identifier in the
+  // reconstruction, but it corresponds to the position in the
+  // images.bin/points3D.bin files. This is mainly done for more efficient
+  // access to the data, which is required during the stereo fusion stage.
   std::vector<Image> images;
   std::vector<Point> points;
 
  private:
+  bool ReadFromBundlerPMVS(const std::string& path);
+  bool ReadFromRawPMVS(const std::string& path);
+
   std::vector<std::string> image_names_;
-  std::unordered_map<std::string, int> image_name_to_id_;
+  std::unordered_map<std::string, int> image_name_to_idx_;
+
+  std::vector<std::vector<int>> pmvs_vis_dat_;
 };
 
 }  // namespace mvs

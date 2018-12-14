@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "optim/bundle_adjustment.h"
 
@@ -22,9 +37,11 @@
 #include <omp.h>
 #endif
 
+#include "base/camera_models.h"
 #include "base/cost_functions.h"
 #include "base/projection.h"
 #include "util/misc.h"
+#include "util/threading.h"
 #include "util/timer.h"
 
 
@@ -40,10 +57,14 @@ ceres::LossFunction* BundleAdjustmentOptions::CreateLossFunction() const {
     case LossFunctionType::TRIVIAL:
       loss_function = new ceres::TrivialLoss();
       break;
+    case LossFunctionType::SOFT_L1:
+      loss_function = new ceres::SoftLOneLoss(loss_function_scale);
+      break;
     case LossFunctionType::CAUCHY:
       loss_function = new ceres::CauchyLoss(loss_function_scale);
       break;
   }
+  CHECK_NOTNULL(loss_function);
   return loss_function;
 }
 
@@ -263,17 +284,12 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     solver_options.preconditioner_type = ceres::SCHUR_JACOBI;
   }
 
-#ifdef OPENMP_ENABLED
-  if (solver_options.num_threads <= 0) {
-    solver_options.num_threads = omp_get_max_threads();
-  }
-  if (solver_options.num_linear_solver_threads <= 0) {
-    solver_options.num_linear_solver_threads = omp_get_max_threads();
-  }
-#else
-  solver_options.num_threads = 1;
-  solver_options.num_linear_solver_threads = 1;
-#endif
+  solver_options.num_threads =
+      GetEffectiveNumThreads(solver_options.num_threads);
+#if CERES_VERSION_MAJOR < 2
+  solver_options.num_linear_solver_threads =
+      GetEffectiveNumThreads(solver_options.num_linear_solver_threads);
+#endif  // CERES_VERSION_MAJOR
 
   std::string solver_error;
   CHECK(solver_options.IsValid(&solver_error)) << solver_error;
@@ -409,7 +425,8 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
     gps_residual_ids_.push_back(id);
   }
 
-  const bool constant_pose = config_.HasConstantPose(image_id);
+  const bool constant_pose =
+      !options_.refine_extrinsics || config_.HasConstantPose(image_id);
 
   // Add residuals to bundle adjustment problem.
   size_t num_observations = 0;
@@ -789,7 +806,7 @@ void ParallelBundleAdjuster::AddImagesToProblem(
 
     CHECK(!config_.HasConstantTvec(image_id))
         << "PBA cannot fix partial extrinsics";
-    if (config_.HasConstantPose(image_id)) {
+    if (!ba_options_.refine_extrinsics || config_.HasConstantPose(image_id)) {
       CHECK(config_.IsConstantCamera(image.CameraId()))
           << "PBA cannot fix extrinsics only";
       pba_camera.SetConstantCamera();
@@ -908,17 +925,12 @@ bool RigBundleAdjuster::Solve(Reconstruction* reconstruction,
     solver_options.preconditioner_type = ceres::SCHUR_JACOBI;
   }
 
-#ifdef OPENMP_ENABLED
-  if (solver_options.num_threads <= 0) {
-    solver_options.num_threads = omp_get_max_threads();
-  }
-  if (solver_options.num_linear_solver_threads <= 0) {
-    solver_options.num_linear_solver_threads = omp_get_max_threads();
-  }
-#else
-  solver_options.num_threads = 1;
-  solver_options.num_linear_solver_threads = 1;
-#endif
+  solver_options.num_threads =
+      GetEffectiveNumThreads(solver_options.num_threads);
+#if CERES_VERSION_MAJOR < 2
+  solver_options.num_linear_solver_threads =
+      GetEffectiveNumThreads(solver_options.num_linear_solver_threads);
+#endif  // CERES_VERSION_MAJOR
 
   std::string solver_error;
   CHECK(solver_options.IsValid(&solver_error)) << solver_error;
@@ -977,6 +989,9 @@ void RigBundleAdjuster::AddImageToProblem(const image_t image_id,
                                           Reconstruction* reconstruction,
                                           std::vector<CameraRig>* camera_rigs,
                                           ceres::LossFunction* loss_function) {
+  const double max_squared_reproj_error =
+      rig_options_.max_reproj_error * rig_options_.max_reproj_error;
+
   Image& image = reconstruction->Image(image_id);
   Camera& camera = reconstruction->Camera(image.CameraId());
 
@@ -1036,10 +1051,9 @@ void RigBundleAdjuster::AddImageToProblem(const image_t image_id,
     assert(point3D.Track().Length() > 1);
 
     if (camera_rig != nullptr &&
-        (!HasPointPositiveDepth(rig_proj_matrix, point3D.XYZ()) ||
-         CalculateReprojectionError(point2D.XY(), point3D.XYZ(),
-                                    rig_proj_matrix,
-                                    camera) > rig_options_.max_reproj_error)) {
+        CalculateSquaredReprojectionError(point2D.XY(), point3D.XYZ(),
+                                          rig_proj_matrix,
+                                          camera) > max_squared_reproj_error) {
       continue;
     }
 

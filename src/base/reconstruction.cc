@@ -1,23 +1,39 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "base/reconstruction.h"
 
 #include <fstream>
 
+#include "base/database_cache.h"
 #include "base/pose.h"
 #include "base/projection.h"
 #include "base/similarity_transform.h"
@@ -26,6 +42,7 @@
 #include "optim/loransac.h"
 #include "util/bitmap.h"
 #include "util/misc.h"
+#include "util/ply.h"
 
 #define _USE_EIGEN
 #include "ext/OpenMVS/Interface.h"
@@ -33,7 +50,7 @@
 namespace colmap {
 
 Reconstruction::Reconstruction()
-    : scene_graph_(nullptr), num_added_points3D_(0) {}
+    : correspondence_graph_(nullptr), num_added_points3D_(0) {}
 
 std::unordered_set<point3D_t> Reconstruction::Point3DIds() const {
   std::unordered_set<point3D_t> point3D_ids;
@@ -47,7 +64,7 @@ std::unordered_set<point3D_t> Reconstruction::Point3DIds() const {
 }
 
 void Reconstruction::Load(const DatabaseCache& database_cache) {
-  scene_graph_ = nullptr;
+  correspondence_graph_ = nullptr;
 
   // Add cameras.
   cameras_.reserve(database_cache.NumCameras());
@@ -79,17 +96,17 @@ void Reconstruction::Load(const DatabaseCache& database_cache) {
 
   // Add image pairs.
   for (const auto& image_pair :
-       database_cache.SceneGraph().NumCorrespondencesBetweenImages()) {
+       database_cache.CorrespondenceGraph().NumCorrespondencesBetweenImages()) {
     image_pairs_[image_pair.first] = std::make_pair(0, image_pair.second);
   }
 }
 
-void Reconstruction::SetUp(const SceneGraph* scene_graph) {
-  CHECK_NOTNULL(scene_graph);
+void Reconstruction::SetUp(const CorrespondenceGraph* correspondence_graph) {
+  CHECK_NOTNULL(correspondence_graph);
   for (auto& image : images_) {
     image.second.SetUp(Camera(image.second.CameraId()));
   }
-  scene_graph_ = scene_graph;
+  correspondence_graph_ = correspondence_graph;
 
   // If an existing model was loaded from disk and there were already images
   // registered previously, we need to set observations as triangulated.
@@ -107,7 +124,7 @@ void Reconstruction::SetUp(const SceneGraph* scene_graph) {
 }
 
 void Reconstruction::TearDown() {
-  scene_graph_ = nullptr;
+  correspondence_graph_ = nullptr;
 
   // Remove all not yet registered images.
   std::unordered_set<camera_t> keep_camera_ids;
@@ -148,7 +165,8 @@ void Reconstruction::AddImage(const class Image& image) {
 }
 
 point3D_t Reconstruction::AddPoint3D(const Eigen::Vector3d& xyz,
-                                     const Track& track) {
+                                     const Track& track,
+                                     const Eigen::Vector3ub& color) {
   const point3D_t point3D_id = ++num_added_points3D_;
   CHECK(!ExistsPoint3D(point3D_id));
 
@@ -156,6 +174,7 @@ point3D_t Reconstruction::AddPoint3D(const Eigen::Vector3d& xyz,
 
   point3D.SetXYZ(xyz);
   point3D.SetTrack(track);
+  point3D.SetColor(color);
 
   for (const auto& track_el : track.Elements()) {
     class Image& image = Image(track_el.image_id);
@@ -212,9 +231,8 @@ point3D_t Reconstruction::MergePoints3D(const point3D_t point3D_id1,
   DeletePoint3D(point3D_id1);
   DeletePoint3D(point3D_id2);
 
-  const point3D_t merged_point3D_id = AddPoint3D(merged_xyz, merged_track);
-  class Point3D& merged_point3D = Point3D(merged_point3D_id);
-  merged_point3D.SetColor(merged_rgb.cast<uint8_t>());
+  const point3D_t merged_point3D_id =
+      AddPoint3D(merged_xyz, merged_track, merged_rgb.cast<uint8_t>());
 
   return merged_point3D_id;
 }
@@ -368,12 +386,13 @@ void Reconstruction::Normalize(const double extent, const double p0,
   const Eigen::Vector3d translation = mean_coord;
 
   // Transform images.
-  for (auto& elem : proj_centers) {
-    elem.second -= translation;
-    elem.second *= scale;
-    const Eigen::Quaterniond quat(elem.first->Qvec(0), elem.first->Qvec(1),
-                                  elem.first->Qvec(2), elem.first->Qvec(3));
-    elem.first->SetTvec(quat * -elem.second);
+  for (auto& image_proj_center : proj_centers) {
+    image_proj_center.second -= translation;
+    image_proj_center.second *= scale;
+    const Eigen::Quaterniond quat(
+        image_proj_center.first->Qvec(0), image_proj_center.first->Qvec(1),
+        image_proj_center.first->Qvec(2), image_proj_center.first->Qvec(3));
+    image_proj_center.first->SetTvec(quat * -image_proj_center.second);
   }
 
   // Transform points.
@@ -383,10 +402,7 @@ void Reconstruction::Normalize(const double extent, const double p0,
   }
 }
 
-void Reconstruction::Transform(const double scale, const Eigen::Vector4d& qvec,
-                               const Eigen::Vector3d& tvec) {
-  CHECK_GT(scale, 0);
-  const SimilarityTransform3 tform(scale, qvec, tvec);
+void Reconstruction::Transform(const SimilarityTransform3& tform) {
   for (auto& image : images_) {
     tform.TransformPose(&image.second.Qvec(), &image.second.Tvec());
   }
@@ -396,40 +412,32 @@ void Reconstruction::Transform(const double scale, const Eigen::Vector4d& qvec,
 }
 
 bool Reconstruction::Merge(const Reconstruction& reconstruction,
-                           const int min_common_images) {
-  CHECK_GE(min_common_images, 3);
+                           const double max_reproj_error) {
+  const double kMinInlierObservations = 0.3;
+
+  Eigen::Matrix3x4d alignment;
+  if (!ComputeAlignmentBetweenReconstructions(reconstruction, *this,
+                                              kMinInlierObservations,
+                                              max_reproj_error, &alignment)) {
+    return false;
+  }
+
+  const SimilarityTransform3 tform(alignment);
 
   // Find common and missing images in the two reconstructions.
 
-  std::set<image_t> common_image_ids;
-  std::set<image_t> missing_image_ids;
+  std::unordered_set<image_t> common_image_ids;
+  common_image_ids.reserve(reconstruction.NumRegImages());
+  std::unordered_set<image_t> missing_image_ids;
+  missing_image_ids.reserve(reconstruction.NumRegImages());
+
   for (const auto& image_id : reconstruction.RegImageIds()) {
     if (ExistsImage(image_id)) {
-      CHECK(IsImageRegistered(image_id))
-          << "Make sure to tear down the reconstructions before merging";
       common_image_ids.insert(image_id);
     } else {
       missing_image_ids.insert(image_id);
     }
   }
-
-  if (common_image_ids.size() < static_cast<size_t>(min_common_images)) {
-    return false;
-  }
-
-  // Estimate the similarity transformation between the two reconstructions.
-
-  std::vector<Eigen::Vector3d> src;
-  src.reserve(common_image_ids.size());
-  std::vector<Eigen::Vector3d> dst;
-  dst.reserve(common_image_ids.size());
-  for (const auto image_id : common_image_ids) {
-    src.push_back(reconstruction.Image(image_id).ProjectionCenter());
-    dst.push_back(Image(image_id).ProjectionCenter());
-  }
-
-  SimilarityTransform3 tform;
-  tform.Estimate(src, dst);
 
   // Register the missing images in this reconstruction.
 
@@ -480,13 +488,15 @@ bool Reconstruction::Merge(const Reconstruction& reconstruction,
     if (create_new_point || merge_new_and_old_point) {
       Eigen::Vector3d xyz = point3D.second.XYZ();
       tform.TransformPoint(&xyz);
-      const auto point3D_id = AddPoint3D(xyz, new_track);
-      Point3D(point3D_id).SetColor(point3D.second.Color());
+      const auto point3D_id =
+          AddPoint3D(xyz, new_track, point3D.second.Color());
       if (old_point3D_ids.size() == 1) {
         MergePoints3D(point3D_id, *old_point3D_ids.begin());
       }
     }
   }
+
+  FilterPoints3DWithLargeReprojectionError(max_reproj_error, Point3DIds());
 
   return true;
 }
@@ -527,17 +537,9 @@ bool Reconstruction::Align(const std::vector<std::string>& image_names,
     return false;
   }
 
-  // Estimate the similarity transformation between the two reconstructions.
   SimilarityTransform3 tform;
   tform.Estimate(src, dst);
-
-  // Update the cameras and points using the estimated transform.
-  for (auto& image : images_) {
-    tform.TransformPose(&image.second.Qvec(), &image.second.Tvec());
-  }
-  for (auto& point3D : points3D_) {
-    tform.TransformPoint(&point3D.second.XYZ());
-  }
+  Transform(tform);
 
   return true;
 }
@@ -588,15 +590,7 @@ bool Reconstruction::AlignRobust(const std::vector<std::string>& image_names,
     return false;
   }
 
-  SimilarityTransform3 tform(report.model);
-
-  // Update the cameras and points using the estimated transform.
-  for (auto& image : images_) {
-    tform.TransformPose(&image.second.Qvec(), &image.second.Tvec());
-  }
-  for (auto& point3D : points3D_) {
-    tform.TransformPoint(&point3D.second.XYZ());
-  }
+  Transform(SimilarityTransform3(report.model));
 
   return true;
 }
@@ -710,6 +704,19 @@ const class Image* Reconstruction::FindImageWithName(
     }
   }
   return nullptr;
+}
+
+std::vector<image_t> Reconstruction::FindCommonRegImageIds(
+    const Reconstruction& reconstruction) const {
+  std::vector<image_t> common_reg_image_ids;
+  for (const auto image_id : reg_image_ids_) {
+    if (reconstruction.ExistsImage(image_id) &&
+        reconstruction.IsImageRegistered(image_id)) {
+      CHECK_EQ(Image(image_id).Name(), reconstruction.Image(image_id).Name());
+      common_reg_image_ids.push_back(image_id);
+    }
+  }
+  return common_reg_image_ids;
 }
 
 size_t Reconstruction::FilterPoints3D(
@@ -878,201 +885,34 @@ void Reconstruction::WriteBinary(const std::string& path) const {
   WritePoints3DBinary(JoinPaths(path, "points3D.bin"));
 }
 
+std::vector<PlyPoint> Reconstruction::ConvertToPLY() const {
+  std::vector<PlyPoint> ply_points;
+  ply_points.reserve(points3D_.size());
+
+  for (const auto& point3D : points3D_) {
+    PlyPoint ply_point;
+    ply_point.x = point3D.second.X();
+    ply_point.y = point3D.second.Y();
+    ply_point.z = point3D.second.Z();
+    ply_point.r = point3D.second.Color(0);
+    ply_point.g = point3D.second.Color(1);
+    ply_point.b = point3D.second.Color(2);
+    ply_points.push_back(ply_point);
+  }
+
+  return ply_points;
+}
+
 void Reconstruction::ImportPLY(const std::string& path) {
   points3D_.clear();
 
-  std::ifstream file(path, std::ios::binary);
-  CHECK(file.is_open()) << path;
+  const auto ply_points = ReadPly(path);
 
-  std::string line;
+  points3D_.reserve(ply_points.size());
 
-  int X_index = -1;
-  int Y_index = -1;
-  int Z_index = -1;
-  int R_index = -1;
-  int G_index = -1;
-  int B_index = -1;
-  int X_byte_pos = -1;
-  int Y_byte_pos = -1;
-  int Z_byte_pos = -1;
-  int R_byte_pos = -1;
-  int G_byte_pos = -1;
-  int B_byte_pos = -1;
-
-  bool in_vertex_section = false;
-  bool is_binary = false;
-  bool is_little_endian = false;
-  size_t num_bytes_per_line = 0;
-  size_t num_vertices = 0;
-
-  int index = 0;
-  while (std::getline(file, line)) {
-    StringTrim(&line);
-
-    if (line.empty()) {
-      continue;
-    }
-
-    if (line == "end_header") {
-      break;
-    }
-
-    if (line.size() >= 6 && line.substr(0, 6) == "format") {
-      if (line == "format ascii 1.0") {
-        is_binary = false;
-      } else if (line == "format binary_little_endian 1.0") {
-        is_binary = true;
-        is_little_endian = true;
-      } else if (line == "format binary_big_endian 1.0") {
-        is_binary = true;
-        is_little_endian = false;
-      }
-    }
-
-    const std::vector<std::string> line_elems = StringSplit(line, " ");
-
-    if (line_elems.size() >= 3 && line_elems[0] == "element") {
-      in_vertex_section = false;
-      if (line_elems[1] == "vertex") {
-        num_vertices = std::stoll(line_elems[2]);
-        in_vertex_section = true;
-      } else if (std::stoll(line_elems[2]) > 0) {
-        LOG(FATAL) << "Only vertex elements supported";
-      }
-    }
-
-    if (!in_vertex_section) {
-      continue;
-    }
-
-    // Just render diffuse, ambient, specular colors as normal colors.
-
-    if (line_elems.size() >= 3 && line_elems[0] == "property") {
-      CHECK(line_elems[1] == "float" || line_elems[1] == "uchar")
-          << "PLY import only supports the float and uchar data types";
-      if (line == "property float x") {
-        X_index = index;
-        X_byte_pos = num_bytes_per_line;
-      } else if (line == "property float y") {
-        Y_index = index;
-        Y_byte_pos = num_bytes_per_line;
-      } else if (line == "property float z") {
-        Z_index = index;
-        Z_byte_pos = num_bytes_per_line;
-      } else if (line == "property uchar r" || line == "property uchar red" ||
-                 line == "property uchar diffuse_red" ||
-                 line == "property uchar ambient_red" ||
-                 line == "property uchar specular_red") {
-        R_index = index;
-        R_byte_pos = num_bytes_per_line;
-      } else if (line == "property uchar g" || line == "property uchar green" ||
-                 line == "property uchar diffuse_green" ||
-                 line == "property uchar ambient_green" ||
-                 line == "property uchar specular_green") {
-        G_index = index;
-        G_byte_pos = num_bytes_per_line;
-      } else if (line == "property uchar b" || line == "property uchar blue" ||
-                 line == "property uchar diffuse_blue" ||
-                 line == "property uchar ambient_blue" ||
-                 line == "property uchar specular_blue") {
-        B_index = index;
-        B_byte_pos = num_bytes_per_line;
-      }
-
-      index += 1;
-      if (line_elems[1] == "float") {
-        num_bytes_per_line += 4;
-      } else if (line_elems[1] == "uchar") {
-        num_bytes_per_line += 1;
-      } else {
-        LOG(FATAL) << "Invalid data type: " << line_elems[1];
-      }
-    }
-  }
-
-  const bool is_rgb_missing = R_index == -1 || G_index == -1 || B_index == -1;
-
-  CHECK(X_index != -1 && Y_index != -1 && Z_index)
-      << "Invalid PLY file format: x, y, z properties missing";
-
-  if (is_binary) {
-    std::vector<char> buffer(num_bytes_per_line);
-    for (size_t i = 0; i < num_vertices; ++i) {
-      file.read(buffer.data(), num_bytes_per_line);
-
-      Eigen::Vector3d xyz;
-      Eigen::Vector3i rgb;
-      if (is_little_endian) {
-        xyz(0) = LittleEndianToNative(
-            *reinterpret_cast<float*>(&buffer[X_byte_pos]));
-        xyz(1) = LittleEndianToNative(
-            *reinterpret_cast<float*>(&buffer[Y_byte_pos]));
-        xyz(2) = LittleEndianToNative(
-            *reinterpret_cast<float*>(&buffer[Z_byte_pos]));
-
-        if (is_rgb_missing) {
-          rgb.setZero();
-        } else {
-          rgb(0) = LittleEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
-          rgb(1) = LittleEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
-          rgb(2) = LittleEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
-        }
-      } else {
-        xyz(0) =
-            BigEndianToNative(*reinterpret_cast<float*>(&buffer[X_byte_pos]));
-        xyz(1) =
-            BigEndianToNative(*reinterpret_cast<float*>(&buffer[Y_byte_pos]));
-        xyz(2) =
-            BigEndianToNative(*reinterpret_cast<float*>(&buffer[Z_byte_pos]));
-
-        if (is_rgb_missing) {
-          rgb.setZero();
-        } else {
-          rgb(0) = BigEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[R_byte_pos]));
-          rgb(1) = BigEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[G_byte_pos]));
-          rgb(2) = BigEndianToNative(
-              *reinterpret_cast<uint8_t*>(&buffer[B_byte_pos]));
-        }
-      }
-
-      const point3D_t point3D_id = AddPoint3D(xyz, Track());
-      Point3D(point3D_id).SetColor(rgb.cast<uint8_t>());
-    }
-  } else {
-    while (std::getline(file, line)) {
-      StringTrim(&line);
-      std::stringstream line_stream(line);
-
-      std::string item;
-      std::vector<std::string> items;
-      while (!line_stream.eof()) {
-        std::getline(line_stream, item, ' ');
-        StringTrim(&item);
-        items.push_back(item);
-      }
-
-      Eigen::Vector3d xyz;
-      xyz(0) = std::stold(items.at(X_index));
-      xyz(1) = std::stold(items.at(Y_index));
-      xyz(2) = std::stold(items.at(Z_index));
-
-      Eigen::Vector3i rgb;
-      if (is_rgb_missing) {
-        rgb.setZero();
-      } else {
-        rgb(0) = std::stoi(items.at(R_index));
-        rgb(1) = std::stoi(items.at(G_index));
-        rgb(2) = std::stoi(items.at(B_index));
-      }
-
-      const point3D_t point3D_id = AddPoint3D(xyz, Track());
-      Point3D(point3D_id).SetColor(rgb.cast<uint8_t>());
-    }
+  for (const auto& ply_point : ply_points) {
+    AddPoint3D(Eigen::Vector3d(ply_point.x, ply_point.y, ply_point.z), Track(),
+               Eigen::Vector3ub(ply_point.r, ply_point.g, ply_point.b));
   }
 }
 
@@ -1082,9 +922,9 @@ bool Reconstruction::ExportNVM(const std::string& path) const {
   file.precision(10);
   CHECK(file.is_open()) << path;
 
-  file << "NVM_V3" << std::endl << std::endl;
-
-  file << reg_image_ids_.size() << std::endl;
+  // White space added for compatibility with Meshlab.
+  file << "NVM_V3 " << std::endl << " " << std::endl;
+  file << reg_image_ids_.size() << "  " << std::endl;
 
   std::unordered_map<image_t, size_t> image_id_to_idx_;
   size_t image_idx = 0;
@@ -1260,34 +1100,11 @@ bool Reconstruction::ExportBundler(const std::string& path,
 }
 
 void Reconstruction::ExportPLY(const std::string& path) const {
-  std::fstream text_file(path, std::ios::out);
-  CHECK(text_file.is_open()) << path;
+  const auto ply_points = ConvertToPLY();
 
-  text_file << "ply" << std::endl;
-  text_file << "format binary_little_endian 1.0" << std::endl;
-  text_file << "element vertex " << points3D_.size() << std::endl;
-  text_file << "property float x" << std::endl;
-  text_file << "property float y" << std::endl;
-  text_file << "property float z" << std::endl;
-  text_file << "property uchar red" << std::endl;
-  text_file << "property uchar green" << std::endl;
-  text_file << "property uchar blue" << std::endl;
-  text_file << "end_header" << std::endl;
-  text_file.close();
-
-  std::fstream binary_file(path,
-                           std::ios::out | std::ios::binary | std::ios::app);
-  CHECK(binary_file.is_open()) << path;
-
-  for (const auto& point3D : points3D_) {
-    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.X());
-    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.Y());
-    WriteBinaryLittleEndian<float>(&binary_file, point3D.second.Z());
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(0));
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(1));
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point3D.second.Color(2));
-  }
-  binary_file.close();
+  const bool kWriteNormal = false;
+  const bool kWriteRGB = true;
+  WriteBinaryPlyPoints(path, ply_points, kWriteNormal, kWriteRGB);
 }
 
 void Reconstruction::ExportVRML(const std::string& images_path,
@@ -1523,7 +1340,9 @@ bool Reconstruction::ExtractColorsForImage(const image_t image_id,
       class Point3D& point3D = Point3D(point2D.Point3DId());
       if (point3D.Color() == kBlackColor) {
         BitmapColor<float> color;
-        if (bitmap.InterpolateBilinear(point2D.X(), point2D.Y(), &color)) {
+        // COLMAP assumes that the upper left pixel center is (0.5, 0.5).
+        if (bitmap.InterpolateBilinear(point2D.X() - 0.5, point2D.Y() - 0.5,
+                                       &color)) {
           const BitmapColor<uint8_t> color_ub = color.Cast<uint8_t>();
           point3D.SetColor(
               Eigen::Vector3ub(color_ub.r, color_ub.g, color_ub.b));
@@ -1554,7 +1373,9 @@ void Reconstruction::ExtractColorsForAllImages(const std::string& path) {
     for (const Point2D point2D : image.Points2D()) {
       if (point2D.HasPoint3D()) {
         BitmapColor<float> color;
-        if (bitmap.InterpolateBilinear(point2D.X(), point2D.Y(), &color)) {
+        // COLMAP assumes that the upper left pixel center is (0.5, 0.5).
+        if (bitmap.InterpolateBilinear(point2D.X() - 0.5, point2D.Y() - 0.5,
+                                       &color)) {
           if (color_sums.count(point2D.Point3DId())) {
             Eigen::Vector3d& color_sum = color_sums[point2D.Point3DId()];
             color_sum(0) += color.r;
@@ -1571,7 +1392,7 @@ void Reconstruction::ExtractColorsForAllImages(const std::string& path) {
     }
   }
 
-  const Eigen::Vector3ub kBlackColor(0, 0, 0);
+  const Eigen::Vector3ub kBlackColor = Eigen::Vector3ub::Zero();
   for (auto& point3D : points3D_) {
     if (color_sums.count(point3D.first)) {
       Eigen::Vector3d color =
@@ -1667,11 +1488,10 @@ size_t Reconstruction::FilterPoints3DWithSmallTriangulationAngle(
 size_t Reconstruction::FilterPoints3DWithLargeReprojectionError(
     const double max_reproj_error,
     const std::unordered_set<point3D_t>& point3D_ids) {
+  const double max_squared_reproj_error = max_reproj_error * max_reproj_error;
+
   // Number of filtered points.
   size_t num_filtered = 0;
-
-  // Cache for projection matrices.
-  EIGEN_STL_UMAP(image_t, Eigen::Matrix3x4d) proj_matrices;
 
   for (const auto point3D_id : point3D_ids) {
     if (!ExistsPoint3D(point3D_id)) {
@@ -1682,6 +1502,7 @@ size_t Reconstruction::FilterPoints3DWithLargeReprojectionError(
 
     if (point3D.Track().Length() < 2) {
       DeletePoint3D(point3D_id);
+      num_filtered += point3D.Track().Length();
       continue;
     }
 
@@ -1691,32 +1512,18 @@ size_t Reconstruction::FilterPoints3DWithLargeReprojectionError(
 
     for (const auto& track_el : point3D.Track().Elements()) {
       const class Image& image = Image(track_el.image_id);
-
-      Eigen::Matrix3x4d proj_matrix;
-      if (proj_matrices.count(track_el.image_id) == 0) {
-        proj_matrix = image.ProjectionMatrix();
-        proj_matrices[track_el.image_id] = proj_matrix;
-      } else {
-        proj_matrix = proj_matrices[track_el.image_id];
-      }
-
-      if (HasPointPositiveDepth(proj_matrix, point3D.XYZ())) {
-        const class Camera& camera = Camera(image.CameraId());
-        const Point2D& point2D = image.Point2D(track_el.point2D_idx);
-        const double reproj_error = CalculateReprojectionError(
-            point2D.XY(), point3D.XYZ(), proj_matrix, camera);
-        if (reproj_error > max_reproj_error) {
-          track_els_to_delete.push_back(track_el);
-        } else {
-          reproj_error_sum += reproj_error;
-        }
-      } else {
+      const class Camera& camera = Camera(image.CameraId());
+      const Point2D& point2D = image.Point2D(track_el.point2D_idx);
+      const double squared_reproj_error = CalculateSquaredReprojectionError(
+          point2D.XY(), point3D.XYZ(), image.Qvec(), image.Tvec(), camera);
+      if (squared_reproj_error > max_squared_reproj_error) {
         track_els_to_delete.push_back(track_el);
+      } else {
+        reproj_error_sum += std::sqrt(squared_reproj_error);
       }
     }
 
-    if (track_els_to_delete.size() == point3D.Track().Length() ||
-        track_els_to_delete.size() == point3D.Track().Length() - 1) {
+    if (track_els_to_delete.size() >= point3D.Track().Length() - 1) {
       num_filtered += point3D.Track().Length();
       DeletePoint3D(point3D_id);
     } else {
@@ -2304,14 +2111,14 @@ void Reconstruction::WritePoints3DBinary(const std::string& path) const {
 void Reconstruction::SetObservationAsTriangulated(
     const image_t image_id, const point2D_t point2D_idx,
     const bool is_continued_point3D) {
-  if (scene_graph_ == nullptr) {
+  if (correspondence_graph_ == nullptr) {
     return;
   }
 
   const class Image& image = Image(image_id);
   const Point2D& point2D = image.Point2D(point2D_idx);
-  const std::vector<SceneGraph::Correspondence>& corrs =
-      scene_graph_->FindCorrespondences(image_id, point2D_idx);
+  const std::vector<CorrespondenceGraph::Correspondence>& corrs =
+      correspondence_graph_->FindCorrespondences(image_id, point2D_idx);
 
   CHECK(image.IsRegistered());
   CHECK(point2D.HasPoint3D());
@@ -2328,7 +2135,8 @@ void Reconstruction::SetObservationAsTriangulated(
           Database::ImagePairToPairId(image_id, corr.image_id);
       image_pairs_[pair_id].first += 1;
       CHECK_LE(image_pairs_[pair_id].first, image_pairs_[pair_id].second)
-          << "The scene graph graph must not contain duplicate matches";
+          << "The correspondence graph graph must not contain duplicate "
+             "matches";
     }
   }
 }
@@ -2336,14 +2144,14 @@ void Reconstruction::SetObservationAsTriangulated(
 void Reconstruction::ResetTriObservations(const image_t image_id,
                                           const point2D_t point2D_idx,
                                           const bool is_deleted_point3D) {
-  if (scene_graph_ == nullptr) {
+  if (correspondence_graph_ == nullptr) {
     return;
   }
 
   const class Image& image = Image(image_id);
   const Point2D& point2D = image.Point2D(point2D_idx);
-  const std::vector<SceneGraph::Correspondence>& corrs =
-      scene_graph_->FindCorrespondences(image_id, point2D_idx);
+  const std::vector<CorrespondenceGraph::Correspondence>& corrs =
+      correspondence_graph_->FindCorrespondences(image_id, point2D_idx);
 
   CHECK(image.IsRegistered());
   CHECK(point2D.HasPoint3D());

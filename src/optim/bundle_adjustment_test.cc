@@ -1,22 +1,39 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #define TEST_NAME "optim/bundle_adjustment"
 #include "util/testing.h"
 
+#include "base/camera_models.h"
+#include "base/correspondence_graph.h"
 #include "base/projection.h"
 #include "optim/bundle_adjustment.h"
 #include "util/random.h"
@@ -105,7 +122,7 @@ void GeneratePointCloud(const size_t num_points, const Eigen::Vector3d& min,
 
 void GenerateReconstruction(const size_t num_images, const size_t num_points,
                             Reconstruction* reconstruction,
-                            SceneGraph* scene_graph) {
+                            CorrespondenceGraph* correspondence_graph) {
   SetPRNGSeed(0);
 
   GeneratePointCloud(num_points, Eigen::Vector3d(-1, -1, -1),
@@ -148,11 +165,11 @@ void GenerateReconstruction(const size_t num_images, const size_t num_points,
       points2D.push_back(point2D);
     }
 
-    scene_graph->AddImage(image_id, num_points);
+    correspondence_graph->AddImage(image_id, num_points);
     reconstruction->Image(image_id).SetPoints2D(points2D);
   }
 
-  reconstruction->SetUp(scene_graph);
+  reconstruction->SetUp(correspondence_graph);
 
   for (size_t i = 0; i < num_images; ++i) {
     const image_t image_id = static_cast<image_t>(i);
@@ -168,8 +185,8 @@ void GenerateReconstruction(const size_t num_images, const size_t num_points,
 
 BOOST_AUTO_TEST_CASE(TestConfigNumObservations) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(4, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(4, 100, &reconstruction, &correspondence_graph);
 
   BundleAdjustmentConfig config;
 
@@ -192,8 +209,8 @@ BOOST_AUTO_TEST_CASE(TestConfigNumObservations) {
 
 BOOST_AUTO_TEST_CASE(TestTwoView) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -229,8 +246,8 @@ BOOST_AUTO_TEST_CASE(TestTwoView) {
 
 BOOST_AUTO_TEST_CASE(TestTwoViewConstantCamera) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -266,8 +283,8 @@ BOOST_AUTO_TEST_CASE(TestTwoViewConstantCamera) {
 
 BOOST_AUTO_TEST_CASE(TestPartiallyContainedTracks) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(3, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(3, 100, &reconstruction, &correspondence_graph);
   const auto variable_point3D_id =
       reconstruction.Image(2).Point2D(0).Point3DId();
   reconstruction.DeleteObservation(2, 0);
@@ -314,8 +331,8 @@ BOOST_AUTO_TEST_CASE(TestPartiallyContainedTracks) {
 
 BOOST_AUTO_TEST_CASE(TestPartiallyContainedTracksForceToOptimizePoint) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(3, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(3, 100, &reconstruction, &correspondence_graph);
   const point3D_t variable_point3D_id =
       reconstruction.Image(2).Point2D(0).Point3DId();
   const point3D_t add_variable_point3D_id =
@@ -372,8 +389,8 @@ BOOST_AUTO_TEST_CASE(TestPartiallyContainedTracksForceToOptimizePoint) {
 
 BOOST_AUTO_TEST_CASE(TestConstantPoints) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   const point3D_t constant_point3D_id1 = 1;
@@ -419,8 +436,8 @@ BOOST_AUTO_TEST_CASE(TestConstantPoints) {
 
 BOOST_AUTO_TEST_CASE(TestVariableImage) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(3, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(3, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -461,8 +478,8 @@ BOOST_AUTO_TEST_CASE(TestVariableImage) {
 
 BOOST_AUTO_TEST_CASE(TestConstantFocalLength) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -513,8 +530,8 @@ BOOST_AUTO_TEST_CASE(TestConstantFocalLength) {
 
 BOOST_AUTO_TEST_CASE(TestVariablePrincipalPoint) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -577,8 +594,8 @@ BOOST_AUTO_TEST_CASE(TestVariablePrincipalPoint) {
 
 BOOST_AUTO_TEST_CASE(TestConstantExtraParam) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -633,41 +650,34 @@ BOOST_AUTO_TEST_CASE(TestParallelReconstructionSupported) {
   options.refine_principal_point = false;
   options.refine_extra_params = true;
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
-  BOOST_CHECK(
-      ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
+  BOOST_CHECK(ParallelBundleAdjuster::IsSupported(options, reconstruction));
 
   reconstruction.Camera(0).SetModelIdFromName("SIMPLE_PINHOLE");
-  BOOST_CHECK(
-      !ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(!ParallelBundleAdjuster::IsSupported(options, reconstruction));
 
   reconstruction.Camera(0).SetModelIdFromName("SIMPLE_RADIAL");
-  BOOST_CHECK(
-      ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(ParallelBundleAdjuster::IsSupported(options, reconstruction));
 
   options.refine_principal_point = true;
-  BOOST_CHECK(
-      !ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(!ParallelBundleAdjuster::IsSupported(options, reconstruction));
   options.refine_principal_point = false;
 
   options.refine_focal_length = false;
-  BOOST_CHECK(
-      !ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(!ParallelBundleAdjuster::IsSupported(options, reconstruction));
 
   options.refine_extra_params = false;
-  BOOST_CHECK(
-      ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(ParallelBundleAdjuster::IsSupported(options, reconstruction));
 
   options.refine_focal_length = true;
-  BOOST_CHECK(
-      !ParallelBundleAdjuster::IsSupported(options, reconstruction));
+  BOOST_CHECK(!ParallelBundleAdjuster::IsSupported(options, reconstruction));
 }
 
 BOOST_AUTO_TEST_CASE(TestParallelTwoViewVariableIntrinsics) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -705,8 +715,8 @@ BOOST_AUTO_TEST_CASE(TestParallelTwoViewVariableIntrinsics) {
 
 BOOST_AUTO_TEST_CASE(TestParallelTwoViewConstantIntrinsics) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -744,8 +754,8 @@ BOOST_AUTO_TEST_CASE(TestParallelTwoViewConstantIntrinsics) {
 
 BOOST_AUTO_TEST_CASE(TestRigTwoView) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(2, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(2, 100, &reconstruction, &correspondence_graph);
   const auto orig_reconstruction = reconstruction;
 
   BundleAdjustmentConfig config;
@@ -794,8 +804,8 @@ BOOST_AUTO_TEST_CASE(TestRigTwoView) {
 
 BOOST_AUTO_TEST_CASE(TestRigFourView) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(4, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(4, 100, &reconstruction, &correspondence_graph);
   reconstruction.Image(2).SetCameraId(0);
   reconstruction.Image(3).SetCameraId(1);
   const auto orig_reconstruction = reconstruction;
@@ -849,8 +859,8 @@ BOOST_AUTO_TEST_CASE(TestRigFourView) {
 
 BOOST_AUTO_TEST_CASE(TestConstantRigFourView) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(4, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(4, 100, &reconstruction, &correspondence_graph);
   reconstruction.Image(2).SetCameraId(0);
   reconstruction.Image(3).SetCameraId(1);
   const auto orig_reconstruction = reconstruction;
@@ -904,8 +914,8 @@ BOOST_AUTO_TEST_CASE(TestConstantRigFourView) {
 
 BOOST_AUTO_TEST_CASE(TestRigFourViewPartial) {
   Reconstruction reconstruction;
-  SceneGraph scene_graph;
-  GenerateReconstruction(4, 100, &reconstruction, &scene_graph);
+  CorrespondenceGraph correspondence_graph;
+  GenerateReconstruction(4, 100, &reconstruction, &correspondence_graph);
   reconstruction.Image(2).SetCameraId(0);
   reconstruction.Image(3).SetCameraId(1);
   const auto orig_reconstruction = reconstruction;

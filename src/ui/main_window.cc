@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "ui/main_window.h"
 
@@ -39,16 +54,12 @@ MainWindow::MainWindow(const OptionManager& options)
   options_.AddAllOptions();
 }
 
-const ReconstructionManager& MainWindow::GetReconstructionManager() const {
-  return reconstruction_manager_;
+void MainWindow::ImportReconstruction(const std::string& path) {
+  const size_t idx = reconstruction_manager_.Read(path);
+  reconstruction_manager_widget_->Update();
+  reconstruction_manager_widget_->SelectReconstruction(idx);
+  RenderNow();
 }
-
-void MainWindow::showEvent(QShowEvent* event) {
-  after_show_event_->trigger();
-  event->accept();
-}
-
-void MainWindow::afterShowEvent() { opengl_window_->PaintGL(); }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
   if (window_closed_) {
@@ -87,14 +98,8 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::CreateWidgets() {
-  opengl_window_ = new OpenGLWindow(this, &options_);
-
-#ifdef _MSC_VER
-  setCentralWidget(QWidget::createWindowContainer(opengl_window_, this,
-                                                  Qt::MSWindowsOwnDC));
-#else
-  setCentralWidget(QWidget::createWindowContainer(opengl_window_, this));
-#endif
+  model_viewer_widget_ = new ModelViewerWidget(this, &options_);
+  setCentralWidget(model_viewer_widget_);
 
   project_widget_ = new ProjectWidget(this, &options_);
   project_widget_->SetDatabasePath(*options_.database_path);
@@ -109,7 +114,7 @@ void MainWindow::CreateWidgets() {
   bundle_adjustment_widget_ = new BundleAdjustmentWidget(this, &options_);
   dense_reconstruction_widget_ = new DenseReconstructionWidget(this, &options_);
   render_options_widget_ =
-      new RenderOptionsWidget(this, &options_, opengl_window_);
+      new RenderOptionsWidget(this, &options_, model_viewer_widget_);
   log_widget_ = new LogWidget(this);
   undistortion_widget_ = new UndistortionWidget(this, &options_);
   reconstruction_manager_widget_ =
@@ -124,10 +129,6 @@ void MainWindow::CreateWidgets() {
 }
 
 void MainWindow::CreateActions() {
-  after_show_event_ = new QAction(tr("After show event"), this);
-  connect(after_show_event_, &QAction::triggered, this,
-          &MainWindow::afterShowEvent, Qt::QueuedConnection);
-
   //////////////////////////////////////////////////////////////////////////////
   // File actions
   //////////////////////////////////////////////////////////////////////////////
@@ -296,8 +297,8 @@ void MainWindow::CreateActions() {
 
   action_render_reset_view_ = new QAction(
       QIcon(":/media/render-reset-view.png"), tr("Reset view"), this);
-  connect(action_render_reset_view_, &QAction::triggered, opengl_window_,
-          &OpenGLWindow::ResetView);
+  connect(action_render_reset_view_, &QAction::triggered, model_viewer_widget_,
+          &ModelViewerWidget::ResetView);
 
   action_render_options_ = new QAction(QIcon(":/media/render-options.png"),
                                        tr("Render options"), this);
@@ -335,8 +336,8 @@ void MainWindow::CreateActions() {
 
   action_grab_movie_ =
       new QAction(QIcon(":/media/grab-movie.png"), tr("Grab movie"), this);
-  connect(action_grab_movie_, &QAction::triggered, opengl_window_,
-          &OpenGLWindow::GrabMovie);
+  connect(action_grab_movie_, &QAction::triggered, model_viewer_widget_,
+          &ModelViewerWidget::GrabMovie);
 
   action_undistort_ =
       new QAction(QIcon(":/media/undistort.png"), tr("Undistortion"), this);
@@ -348,24 +349,13 @@ void MainWindow::CreateActions() {
   connect(action_extract_colors_, &QAction::triggered, this,
           &MainWindow::ExtractColors);
 
+  action_set_options_ = new QAction(tr("Set options for ..."), this);
+  connect(action_set_options_, &QAction::triggered, this,
+          &MainWindow::SetOptions);
+
   action_reset_options_ = new QAction(tr("Set default options"), this);
   connect(action_reset_options_, &QAction::triggered, this,
           &MainWindow::ResetOptions);
-
-  action_set_options_for_individual_ =
-      new QAction(tr("Set options for individual images"), this);
-  connect(action_set_options_for_individual_, &QAction::triggered, this,
-          &MainWindow::SetOptionsForIndividual);
-
-  action_set_options_for_video_ =
-      new QAction(tr("Set options for video frames"), this);
-  connect(action_set_options_for_video_, &QAction::triggered, this,
-          &MainWindow::SetOptionsForVideo);
-
-  action_set_options_for_internet_ =
-      new QAction(tr("Set options for Internet images"), this);
-  connect(action_set_options_for_internet_, &QAction::triggered, this,
-          &MainWindow::SetOptionsForInternet);
 
   //////////////////////////////////////////////////////////////////////////////
   // Misc actions
@@ -454,10 +444,8 @@ void MainWindow::CreateMenus() {
   extras_menu->addAction(action_undistort_);
   extras_menu->addAction(action_extract_colors_);
   extras_menu->addSeparator();
+  extras_menu->addAction(action_set_options_);
   extras_menu->addAction(action_reset_options_);
-  extras_menu->addAction(action_set_options_for_individual_);
-  extras_menu->addAction(action_set_options_for_video_);
-  extras_menu->addAction(action_set_options_for_internet_);
   menuBar()->addAction(extras_menu->menuAction());
 
   QMenu* help_menu = new QMenu(tr("Help"), this);
@@ -527,11 +515,11 @@ void MainWindow::CreateStatusbar() {
   connect(statusbar_timer_, &QTimer::timeout, this, &MainWindow::UpdateTimer);
   statusbar_timer_->start(1000);
 
-  opengl_window_->statusbar_status_label =
+  model_viewer_widget_->statusbar_status_label =
       new QLabel("0 Images - 0 Points", this);
-  opengl_window_->statusbar_status_label->setFont(font);
-  opengl_window_->statusbar_status_label->setAlignment(Qt::AlignCenter);
-  statusBar()->addWidget(opengl_window_->statusbar_status_label, 1);
+  model_viewer_widget_->statusbar_status_label->setFont(font);
+  model_viewer_widget_->statusbar_status_label->setAlignment(Qt::AlignCenter);
+  statusBar()->addWidget(model_viewer_widget_->statusbar_status_label, 1);
 }
 
 void MainWindow::CreateControllers() {
@@ -1094,15 +1082,15 @@ void MainWindow::RenderSelectedReconstruction() {
   }
 
   const size_t reconstruction_idx = SelectedReconstructionIdx();
-  opengl_window_->reconstruction =
+  model_viewer_widget_->reconstruction =
       &reconstruction_manager_.Get(reconstruction_idx);
-  opengl_window_->Update();
+  model_viewer_widget_->ReloadReconstruction();
 }
 
 void MainWindow::RenderClear() {
   reconstruction_manager_widget_->SelectReconstruction(
       ReconstructionManagerWidget::kNewestReconstructionIdx);
-  opengl_window_->Clear();
+  model_viewer_widget_->ClearReconstruction();
 }
 
 void MainWindow::RenderOptions() {
@@ -1154,7 +1142,7 @@ void MainWindow::GrabImage() {
         !HasFileExtension(file_name.toUtf8().constData(), ".jpg")) {
       file_name += ".png";
     }
-    QImage image = opengl_window_->GrabImage();
+    QImage image = model_viewer_widget_->GrabImage();
     image.save(file_name);
   }
 }
@@ -1198,59 +1186,59 @@ void MainWindow::ExtractColors() {
   });
 }
 
+void MainWindow::SetOptions() {
+  QStringList data_items;
+  data_items << "Individual images"
+             << "Video frames"
+             << "Internet images";
+  bool data_ok;
+  const QString data_item =
+      QInputDialog::getItem(this, "", "Data:", data_items, 0, false, &data_ok);
+  if (!data_ok) {
+    return;
+  }
+
+  QStringList quality_items;
+  quality_items << "Low"
+                << "Medium"
+                << "High"
+                << "Extreme";
+  bool quality_ok;
+  const QString quality_item = QInputDialog::getItem(
+      this, "", "Quality:", quality_items, 2, false, &quality_ok);
+  if (!quality_ok) {
+    return;
+  }
+
+  const bool kResetPaths = false;
+  options_.ResetOptions(kResetPaths);
+
+  if (data_item == "Individual images") {
+    options_.ModifyForIndividualData();
+  } else if (data_item == "Video frames") {
+    options_.ModifyForVideoData();
+  } else if (data_item == "Internet images") {
+    options_.ModifyForInternetData();
+  } else {
+    LOG(FATAL) << "Data type does not exist";
+  }
+
+  if (quality_item == "Low") {
+    options_.ModifyForLowQuality();
+  } else if (quality_item == "Medium") {
+    options_.ModifyForMediumQuality();
+  } else if (quality_item == "High") {
+    options_.ModifyForHighQuality();
+  } else if (quality_item == "Extreme") {
+    options_.ModifyForExtremeQuality();
+  } else {
+    LOG(FATAL) << "Quality level does not exist";
+  }
+}
+
 void MainWindow::ResetOptions() {
-  const std::string project_path = *options_.project_path;
-  const std::string image_path = *options_.image_path;
-  const std::string database_path = *options_.database_path;
-
-  options_.Reset();
-  options_.AddAllOptions();
-
-  *options_.project_path = project_path;
-  *options_.image_path = image_path;
-  *options_.database_path = database_path;
-}
-
-void MainWindow::SetOptionsForIndividual() {
-  const std::string project_path = *options_.project_path;
-  const std::string image_path = *options_.image_path;
-  const std::string database_path = *options_.database_path;
-
-  options_.Reset();
-  options_.AddAllOptions();
-  options_.InitForIndividualData();
-
-  *options_.project_path = project_path;
-  *options_.image_path = image_path;
-  *options_.database_path = database_path;
-}
-
-void MainWindow::SetOptionsForVideo() {
-  const std::string project_path = *options_.project_path;
-  const std::string image_path = *options_.image_path;
-  const std::string database_path = *options_.database_path;
-
-  options_.Reset();
-  options_.AddAllOptions();
-  options_.InitForVideoData();
-
-  *options_.project_path = project_path;
-  *options_.image_path = image_path;
-  *options_.database_path = database_path;
-}
-
-void MainWindow::SetOptionsForInternet() {
-  const std::string project_path = *options_.project_path;
-  const std::string image_path = *options_.image_path;
-  const std::string database_path = *options_.database_path;
-
-  options_.Reset();
-  options_.AddAllOptions();
-  options_.InitForInternetData();
-
-  *options_.project_path = project_path;
-  *options_.image_path = image_path;
-  *options_.database_path = database_path;
+  const bool kResetPaths = false;
+  options_.ResetOptions(kResetPaths);
 }
 
 void MainWindow::About() {
@@ -1259,7 +1247,7 @@ void MainWindow::About() {
       QString().sprintf("<span style='font-weight:normal'><b>%s</b><br />"
                         "<small>(%s)</small><br /><br />"
                         "<b>Author:</b> Johannes L. Schönberger<br /><br />"
-                        "<b>Email:</b> jsch at inf.ethz.ch</span>",
+                        "<b>Email:</b> jsch-at-demuc-dot-de</span>",
                         GetVersionInfo().c_str(), GetBuildInfo().c_str()));
 }
 

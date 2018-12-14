@@ -1,22 +1,38 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_MVS_FUSION_H_
 #define COLMAP_SRC_MVS_FUSION_H_
 
+#include <unordered_set>
 #include <vector>
 
 #include <Eigen/Core>
@@ -30,72 +46,63 @@
 #include "util/alignment.h"
 #include "util/cache.h"
 #include "util/math.h"
+#include "util/ply.h"
 #include "util/threading.h"
 
 namespace colmap {
 namespace mvs {
 
-struct FusedPoint {
-  float x = 0.0f;
-  float y = 0.0f;
-  float z = 0.0f;
-  float nx = 0.0f;
-  float ny = 0.0f;
-  float nz = 0.0f;
-  uint8_t r = 0;
-  uint8_t g = 0;
-  uint8_t b = 0;
-};
-
 struct StereoFusionOptions {
-    // Maximum image size in either dimension.
-    int max_image_size = -1;
+  // Maximum image size in either dimension.
+  int max_image_size = -1;
 
-    // Minimum number of fused pixels to produce a point.
-    int min_num_pixels = 5;
+  // Minimum number of fused pixels to produce a point.
+  int min_num_pixels = 5;
 
-    // Maximum number of pixels to fuse into a single point.
-    int max_num_pixels = 10000;
+  // Maximum number of pixels to fuse into a single point.
+  int max_num_pixels = 10000;
 
-    // Maximum depth in consistency graph traversal.
-    int max_traversal_depth = 100;
+  // Maximum depth in consistency graph traversal.
+  int max_traversal_depth = 100;
 
-    // Maximum relative difference between measured and projected pixel.
-    double max_reproj_error = 2.0f;
+  // Maximum relative difference between measured and projected pixel.
+  double max_reproj_error = 2.0f;
 
-    // Maximum relative difference between measured and projected depth.
-    double max_depth_error = 0.01f;
+  // Maximum relative difference between measured and projected depth.
+  double max_depth_error = 0.01f;
 
-    // Maximum angular difference in degrees of normals of pixels to be fused.
-    double max_normal_error = 10.0f;
+  // Maximum angular difference in degrees of normals of pixels to be fused.
+  double max_normal_error = 10.0f;
 
-    // Number of overlapping images to transitively check for fusing points.
-    int check_num_images = 50;
+  // Number of overlapping images to transitively check for fusing points.
+  int check_num_images = 50;
 
-    // Cache size in gigabytes for fusion. The fusion keeps the bitmaps, depth
-    // maps, normal maps, and consistency graphs of this number of images in
-    // memory. A higher value leads to less disk access and faster fusion, while
-    // a lower value leads to reduced memory usage. Note that a single image can
-    // consume a lot of memory, if the consistency graph is dense.
-    double cache_size = 32.0;
+  // Cache size in gigabytes for fusion. The fusion keeps the bitmaps, depth
+  // maps, normal maps, and consistency graphs of this number of images in
+  // memory. A higher value leads to less disk access and faster fusion, while
+  // a lower value leads to reduced memory usage. Note that a single image can
+  // consume a lot of memory, if the consistency graph is dense.
+  double cache_size = 32.0;
 
-    // Check the options for validity.
-    bool Check() const;
+  // Check the options for validity.
+  bool Check() const;
 
-    // Print the options to stdout.
-    void Print() const;
-  };
+  // Print the options to stdout.
+  void Print() const;
+};
 
 class StereoFusion : public Thread {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  StereoFusion(const StereoFusionOptions& options, const std::string& workspace_path,
+  StereoFusion(const StereoFusionOptions& options,
+               const std::string& workspace_path,
                const std::string& workspace_format,
                const std::string& pmvs_option_name,
                const std::string& input_type);
 
-  const std::vector<FusedPoint>& GetFusedPoints() const;
+  const std::vector<PlyPoint>& GetFusedPoints() const;
+  const std::vector<std::vector<int>>& GetFusedPointsVisibility() const;
 
  private:
   void Run();
@@ -121,33 +128,50 @@ class StereoFusion : public Thread {
   std::vector<Eigen::Matrix<float, 3, 3, Eigen::RowMajor>> inv_R_;
 
   struct FusionData {
-    int image_id = kInvalidImageId;
+    int image_idx = kInvalidImageId;
     int row = 0;
     int col = 0;
     int traversal_depth = -1;
     bool operator()(const FusionData& data1, const FusionData& data2) {
-      return data1.image_id > data2.image_id;
+      return data1.image_idx > data2.image_idx;
     }
   };
 
+  // Next points to fuse.
   std::vector<FusionData> fusion_queue_;
-  std::vector<FusedPoint> fused_points_;
-  std::vector<float> fused_points_x_;
-  std::vector<float> fused_points_y_;
-  std::vector<float> fused_points_z_;
-  std::vector<float> fused_points_nx_;
-  std::vector<float> fused_points_ny_;
-  std::vector<float> fused_points_nz_;
-  std::vector<uint8_t> fused_points_r_;
-  std::vector<uint8_t> fused_points_g_;
-  std::vector<uint8_t> fused_points_b_;
+
+  // Already fused points.
+  std::vector<PlyPoint> fused_points_;
+  std::vector<std::vector<int>> fused_points_visibility_;
+
+  // Points of different pixels of the currently point to be fused.
+  std::vector<float> fused_point_x_;
+  std::vector<float> fused_point_y_;
+  std::vector<float> fused_point_z_;
+  std::vector<float> fused_point_nx_;
+  std::vector<float> fused_point_ny_;
+  std::vector<float> fused_point_nz_;
+  std::vector<uint8_t> fused_point_r_;
+  std::vector<uint8_t> fused_point_g_;
+  std::vector<uint8_t> fused_point_b_;
+  std::unordered_set<int> fused_point_visibility_;
 };
 
-// Write the point cloud to PLY file.
-void WritePlyText(const std::string& path,
-                  const std::vector<FusedPoint>& points);
-void WritePlyBinary(const std::string& path,
-                    const std::vector<FusedPoint>& points);
+// Write the visiblity information into a binary file of the following format:
+//
+//    <num_points : uint64_t>
+//    <num_visible_images_for_point1 : uint32_t>
+//    <point1_image_idx1 : uint32_t><point1_image_idx2 : uint32_t> ...
+//    <num_visible_images_for_point2 : uint32_t>
+//    <point2_image_idx2 : uint32_t><point2_image_idx2 : uint32_t> ...
+//    ...
+//
+// Note that an image_idx in the case of the mvs::StereoFuser does not
+// correspond to the image_id of a Reconstruction, but the index of the image in
+// the mvs::Model, which is the location of the image in the images.bin/.txt.
+void WritePointsVisibility(
+    const std::string& path,
+    const std::vector<std::vector<int>>& points_visibility);
 
 }  // namespace mvs
 }  // namespace colmap

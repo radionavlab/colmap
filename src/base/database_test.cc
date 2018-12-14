@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #define TEST_NAME "base/database"
 #include "util/testing.h"
@@ -289,15 +304,20 @@ BOOST_AUTO_TEST_CASE(TestMatches) {
   BOOST_CHECK_EQUAL(database.NumMatches(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(TestInlierMatches) {
+BOOST_AUTO_TEST_CASE(TestTwoViewGeometry) {
   Database database(kMemoryDatabasePath);
   const image_t image_id1 = 1;
   const image_t image_id2 = 2;
   TwoViewGeometry two_view_geometry;
   two_view_geometry.inlier_matches = FeatureMatches(1000);
-  database.WriteInlierMatches(image_id1, image_id2, two_view_geometry);
+  two_view_geometry.config =
+      TwoViewGeometry::ConfigurationType::PLANAR_OR_PANORAMIC;
+  two_view_geometry.F = Eigen::Matrix3d::Random();
+  two_view_geometry.E = Eigen::Matrix3d::Random();
+  two_view_geometry.H = Eigen::Matrix3d::Random();
+  database.WriteTwoViewGeometry(image_id1, image_id2, two_view_geometry);
   const TwoViewGeometry two_view_geometry_read =
-      database.ReadInlierMatches(image_id1, image_id2);
+      database.ReadTwoViewGeometry(image_id1, image_id2);
   BOOST_CHECK_EQUAL(two_view_geometry.inlier_matches.size(),
                     two_view_geometry_read.inlier_matches.size());
   for (size_t i = 0; i < two_view_geometry_read.inlier_matches.size(); ++i) {
@@ -306,16 +326,48 @@ BOOST_AUTO_TEST_CASE(TestInlierMatches) {
     BOOST_CHECK_EQUAL(two_view_geometry.inlier_matches[i].point2D_idx2,
                       two_view_geometry_read.inlier_matches[i].point2D_idx2);
   }
+
+  BOOST_CHECK_EQUAL(two_view_geometry.config, two_view_geometry_read.config);
+  BOOST_CHECK_EQUAL(two_view_geometry.F, two_view_geometry_read.F);
+  BOOST_CHECK_EQUAL(two_view_geometry.E, two_view_geometry_read.E);
+  BOOST_CHECK_EQUAL(two_view_geometry.H, two_view_geometry_read.H);
+
+  const TwoViewGeometry two_view_geometry_read_inv =
+      database.ReadTwoViewGeometry(image_id2, image_id1);
+  BOOST_CHECK_EQUAL(two_view_geometry_read_inv.inlier_matches.size(),
+                    two_view_geometry_read.inlier_matches.size());
+  for (size_t i = 0; i < two_view_geometry_read.inlier_matches.size(); ++i) {
+    BOOST_CHECK_EQUAL(two_view_geometry_read_inv.inlier_matches[i].point2D_idx2,
+                      two_view_geometry_read.inlier_matches[i].point2D_idx1);
+    BOOST_CHECK_EQUAL(two_view_geometry_read_inv.inlier_matches[i].point2D_idx1,
+                      two_view_geometry_read.inlier_matches[i].point2D_idx2);
+  }
+
+  BOOST_CHECK_EQUAL(two_view_geometry_read_inv.config,
+                    two_view_geometry_read.config);
+  BOOST_CHECK_EQUAL(two_view_geometry_read_inv.F.transpose(),
+                    two_view_geometry_read.F);
+  BOOST_CHECK_EQUAL(two_view_geometry_read_inv.E.transpose(),
+                    two_view_geometry_read.E);
+  BOOST_CHECK(two_view_geometry_read_inv.H.inverse().eval().isApprox(
+      two_view_geometry_read.H));
+
   std::vector<image_pair_t> image_pair_ids;
   std::vector<TwoViewGeometry> two_view_geometries;
-  database.ReadAllInlierMatches(&image_pair_ids, &two_view_geometries);
+  database.ReadTwoViewGeometries(&image_pair_ids, &two_view_geometries);
   BOOST_CHECK_EQUAL(image_pair_ids.size(), 1);
   BOOST_CHECK_EQUAL(two_view_geometries.size(), 1);
   BOOST_CHECK_EQUAL(image_pair_ids[0],
                     Database::ImagePairToPairId(image_id1, image_id2));
+  BOOST_CHECK_EQUAL(two_view_geometry.config, two_view_geometries[0].config);
+  BOOST_CHECK_EQUAL(two_view_geometry.F, two_view_geometries[0].F);
+  BOOST_CHECK_EQUAL(two_view_geometry.E, two_view_geometries[0].E);
+  BOOST_CHECK_EQUAL(two_view_geometry.H, two_view_geometries[0].H);
+  BOOST_CHECK_EQUAL(two_view_geometry.inlier_matches.size(),
+                    two_view_geometries[0].inlier_matches.size());
   std::vector<std::pair<image_t, image_t>> image_pairs;
   std::vector<int> num_inliers;
-  database.ReadInlierMatchesGraph(&image_pairs, &num_inliers);
+  database.ReadTwoViewGeometryNumInliers(&image_pairs, &num_inliers);
   BOOST_CHECK_EQUAL(image_pairs.size(), 1);
   BOOST_CHECK_EQUAL(num_inliers.size(), 1);
   BOOST_CHECK_EQUAL(image_pairs[0].first, image_id1);
@@ -324,8 +376,8 @@ BOOST_AUTO_TEST_CASE(TestInlierMatches) {
   BOOST_CHECK_EQUAL(database.NumInlierMatches(), 1000);
   database.DeleteInlierMatches(image_id1, image_id2);
   BOOST_CHECK_EQUAL(database.NumInlierMatches(), 0);
-  database.WriteInlierMatches(image_id1, image_id2, two_view_geometry);
+  database.WriteTwoViewGeometry(image_id1, image_id2, two_view_geometry);
   BOOST_CHECK_EQUAL(database.NumInlierMatches(), 1000);
-  database.ClearInlierMatches();
+  database.ClearTwoViewGeometries();
   BOOST_CHECK_EQUAL(database.NumInlierMatches(), 0);
 }

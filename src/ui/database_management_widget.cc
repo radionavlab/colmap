@@ -1,45 +1,63 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "ui/database_management_widget.h"
 
+#include "base/camera_models.h"
+
 namespace colmap {
 
-MatchesTab::MatchesTab(QWidget* parent, OptionManager* options,
-                       Database* database)
+TwoViewInfoTab::TwoViewInfoTab(QWidget* parent, OptionManager* options,
+                               Database* database)
     : QWidget(parent),
       options_(options),
       database_(database),
       matches_viewer_widget_(new FeatureImageViewerWidget(parent, "matches")) {}
 
-void MatchesTab::Clear() {
+void TwoViewInfoTab::Clear() {
   table_widget_->clearContents();
   matches_.clear();
   configs_.clear();
   sorted_matches_idxs_.clear();
 }
 
-void MatchesTab::InitializeTable(const QStringList& table_header) {
+void TwoViewInfoTab::InitializeTable(const QStringList& table_header) {
   QGridLayout* grid = new QGridLayout(this);
 
   info_label_ = new QLabel(this);
   grid->addWidget(info_label_, 0, 0);
 
   QPushButton* show_button = new QPushButton(tr("Show matches"), this);
-  connect(show_button, &QPushButton::released, this, &MatchesTab::ShowMatches);
+  connect(show_button, &QPushButton::released, this,
+          &TwoViewInfoTab::ShowMatches);
   grid->addWidget(show_button, 0, 1, Qt::AlignRight);
 
   table_widget_ = new QTableWidget(this);
@@ -57,7 +75,7 @@ void MatchesTab::InitializeTable(const QStringList& table_header) {
   grid->addWidget(table_widget_, 1, 0, 1, 2);
 }
 
-void MatchesTab::ShowMatches() {
+void TwoViewInfoTab::ShowMatches() {
   QItemSelectionModel* select = table_widget_->selectionModel();
 
   if (!select->hasSelection()) {
@@ -86,7 +104,7 @@ void MatchesTab::ShowMatches() {
                                                  keypoints2, selection.second);
 }
 
-void MatchesTab::FillTable() {
+void TwoViewInfoTab::FillTable() {
   // Sort the matched pairs according to number of matches in descending order.
   sorted_matches_idxs_.resize(matches_.size());
   std::iota(sorted_matches_idxs_.begin(), sorted_matches_idxs_.end(), 0);
@@ -126,17 +144,17 @@ void MatchesTab::FillTable() {
   table_widget_->resizeColumnsToContents();
 }
 
-RawMatchesTab::RawMatchesTab(QWidget* parent, OptionManager* options,
-                             Database* database)
-    : MatchesTab(parent, options, database) {
+MatchesTab::MatchesTab(QWidget* parent, OptionManager* options,
+                       Database* database)
+    : TwoViewInfoTab(parent, options, database) {
   QStringList table_header;
   table_header << "image_id"
                << "num_matches";
   InitializeTable(table_header);
 }
 
-void RawMatchesTab::Reload(const std::vector<Image>& images,
-                           const image_t image_id) {
+void MatchesTab::Reload(const std::vector<Image>& images,
+                        const image_t image_id) {
   matches_.clear();
 
   // Find all matched images
@@ -159,9 +177,10 @@ void RawMatchesTab::Reload(const std::vector<Image>& images,
   FillTable();
 }
 
-InlierMatchesTab::InlierMatchesTab(QWidget* parent, OptionManager* options,
-                                   Database* database)
-    : MatchesTab(parent, options, database) {
+TwoViewGeometriesTab::TwoViewGeometriesTab(QWidget* parent,
+                                           OptionManager* options,
+                                           Database* database)
+    : TwoViewInfoTab(parent, options, database) {
   QStringList table_header;
   table_header << "image_id"
                << "num_matches"
@@ -169,8 +188,8 @@ InlierMatchesTab::InlierMatchesTab(QWidget* parent, OptionManager* options,
   InitializeTable(table_header);
 }
 
-void InlierMatchesTab::Reload(const std::vector<Image>& images,
-                              const image_t image_id) {
+void TwoViewGeometriesTab::Reload(const std::vector<Image>& images,
+                                  const image_t image_id) {
   matches_.clear();
   configs_.clear();
 
@@ -184,7 +203,7 @@ void InlierMatchesTab::Reload(const std::vector<Image>& images,
 
     if (database_->ExistsInlierMatches(image_id, image.ImageId())) {
       const auto two_view_geometry =
-          database_->ReadInlierMatches(image_id, image.ImageId());
+          database_->ReadTwoViewGeometry(image_id, image.ImageId());
 
       if (two_view_geometry.inlier_matches.size() > 0) {
         matches_.emplace_back(&image, two_view_geometry.inlier_matches);
@@ -196,8 +215,9 @@ void InlierMatchesTab::Reload(const std::vector<Image>& images,
   FillTable();
 }
 
-MatchesWidget::MatchesWidget(QWidget* parent, OptionManager* options,
-                             Database* database)
+OverlappingImagesWidget::OverlappingImagesWidget(QWidget* parent,
+                                                 OptionManager* options,
+                                                 Database* database)
     : parent_(parent), options_(options) {
   // Do not change flag, to make sure feature database is not accessed from
   // multiple threads.
@@ -208,33 +228,34 @@ MatchesWidget::MatchesWidget(QWidget* parent, OptionManager* options,
 
   tab_widget_ = new QTabWidget(this);
 
-  raw_matches_tab_ = new RawMatchesTab(this, options_, database);
-  tab_widget_->addTab(raw_matches_tab_, tr("Raw matches"));
+  matches_tab_ = new MatchesTab(this, options_, database);
+  tab_widget_->addTab(matches_tab_, tr("Matches"));
 
-  inlier_matches_tab_ = new InlierMatchesTab(this, options_, database);
-  tab_widget_->addTab(inlier_matches_tab_, tr("Inlier matches"));
+  two_view_geometries_tab_ = new TwoViewGeometriesTab(this, options_, database);
+  tab_widget_->addTab(two_view_geometries_tab_, tr("Two-view geometries"));
 
   grid->addWidget(tab_widget_, 0, 0);
 
   QPushButton* close_button = new QPushButton(tr("Close"), this);
-  connect(close_button, &QPushButton::released, this, &MatchesWidget::close);
+  connect(close_button, &QPushButton::released, this,
+          &OverlappingImagesWidget::close);
   grid->addWidget(close_button, 1, 0, Qt::AlignRight);
 }
 
-void MatchesWidget::ShowMatches(const std::vector<Image>& images,
-                                const image_t image_id) {
+void OverlappingImagesWidget::ShowMatches(const std::vector<Image>& images,
+                                          const image_t image_id) {
   parent_->setDisabled(true);
 
   setWindowTitle(
       QString::fromStdString("Matches for image " + std::to_string(image_id)));
 
-  raw_matches_tab_->Reload(images, image_id);
-  inlier_matches_tab_->Reload(images, image_id);
+  matches_tab_->Reload(images, image_id);
+  two_view_geometries_tab_->Reload(images, image_id);
 }
 
-void MatchesWidget::closeEvent(QCloseEvent*) {
-  raw_matches_tab_->Clear();
-  inlier_matches_tab_->Clear();
+void OverlappingImagesWidget::closeEvent(QCloseEvent*) {
+  matches_tab_->Clear();
+  two_view_geometries_tab_->Clear();
   parent_->setEnabled(true);
 }
 
@@ -458,10 +479,11 @@ ImageTab::ImageTab(QWidget* parent, CameraTab* camera_tab,
           &ImageTab::ShowImage);
   grid->addWidget(show_image_button, 0, 3, Qt::AlignRight);
 
-  QPushButton* show_matches_button = new QPushButton(tr("Show matches"), this);
-  connect(show_matches_button, &QPushButton::released, this,
+  QPushButton* overlapping_images_button =
+      new QPushButton(tr("Overlapping images"), this);
+  connect(overlapping_images_button, &QPushButton::released, this,
           &ImageTab::ShowMatches);
-  grid->addWidget(show_matches_button, 0, 4, Qt::AlignRight);
+  grid->addWidget(overlapping_images_button, 0, 4, Qt::AlignRight);
 
   table_widget_ = new QTableWidget(this);
   table_widget_->setColumnCount(10);
@@ -493,7 +515,8 @@ ImageTab::ImageTab(QWidget* parent, CameraTab* camera_tab,
   grid->setColumnStretch(0, 3);
 
   image_viewer_widget_ = new FeatureImageViewerWidget(parent, "keypoints");
-  matches_widget_ = new MatchesWidget(parent, options, database_);
+  overlapping_images_widget_ =
+      new OverlappingImagesWidget(parent, options, database_);
 }
 
 void ImageTab::Reload() {
@@ -633,9 +656,9 @@ void ImageTab::ShowMatches() {
 
   const auto& image = images_[select->selectedRows().begin()->row()];
 
-  matches_widget_->ShowMatches(images_, image.ImageId());
-  matches_widget_->show();
-  matches_widget_->raise();
+  overlapping_images_widget_->ShowMatches(images_, image.ImageId());
+  overlapping_images_widget_->show();
+  overlapping_images_widget_->raise();
 }
 
 void ImageTab::SetCamera() {
@@ -736,11 +759,11 @@ DatabaseManagementWidget::DatabaseManagementWidget(QWidget* parent,
           &DatabaseManagementWidget::ClearMatches);
   grid->addWidget(clear_matches_button, 1, 0, Qt::AlignLeft);
 
-  QPushButton* clear_inlier_matcjes_button =
-      new QPushButton(tr("Clear Inlier Matches"), this);
-  connect(clear_inlier_matcjes_button, &QPushButton::released, this,
-          &DatabaseManagementWidget::ClearInlierMatches);
-  grid->addWidget(clear_inlier_matcjes_button, 1, 1, Qt::AlignLeft);
+  QPushButton* clear_two_view_geometries_button =
+      new QPushButton(tr("Clear two-view geometries"), this);
+  connect(clear_two_view_geometries_button, &QPushButton::released, this,
+          &DatabaseManagementWidget::ClearTwoViewGeometries);
+  grid->addWidget(clear_two_view_geometries_button, 1, 1, Qt::AlignLeft);
 
   grid->setColumnStretch(1, 1);
 }
@@ -773,14 +796,14 @@ void DatabaseManagementWidget::ClearMatches() {
   database_.ClearMatches();
 }
 
-void DatabaseManagementWidget::ClearInlierMatches() {
+void DatabaseManagementWidget::ClearTwoViewGeometries() {
   QMessageBox::StandardButton reply = QMessageBox::question(
-      this, "", tr("Do you really want to clear all inlier matches?"),
+      this, "", tr("Do you really want to clear all two-view geometries?"),
       QMessageBox::Yes | QMessageBox::No);
   if (reply == QMessageBox::No) {
     return;
   }
-  database_.ClearInlierMatches();
+  database_.ClearTwoViewGeometries();
 }
 
 }  // namespace colmap

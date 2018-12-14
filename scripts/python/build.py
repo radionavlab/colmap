@@ -1,26 +1,44 @@
-# COLMAP - Structure-from-Motion and Multi-View Stereo.
-# Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+# Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+# All rights reserved.
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#
+#     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+#       its contributors may be used to endorse or promote products derived
+#       from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 import os
+import sys
 import glob
 import shutil
 import fileinput
 import platform
 import argparse
 import zipfile
+import hashlib
+import ssl
 import urllib.request
 import subprocess
 import multiprocessing
@@ -43,7 +61,10 @@ def parse_args():
                     "the Internet. It assumes that CMake, Boost, Qt5, and CUDA "
                     "(optional) are already installed on the system. Under "
                     "Windows you must specify the location of these libraries.")
-    parser.add_argument("--path", required=True)
+    parser.add_argument("--build_path", required=True)
+    parser.add_argument("--colmap_path", required=True,
+                        help="The path to the top COLMAP source folder, which "
+                             "contains src/, scripts/, CMakeLists.txt, etc." )
     parser.add_argument("--qt_path", default="",
                         required=PLATFORM_IS_WINDOWS or PLATFORM_IS_MAC,
                         help="The path to the folder containing Qt, "
@@ -54,36 +75,57 @@ def parse_args():
                         help="The path to the folder containing Boost, "
                              "e.g., under Windows: "
                              "C:/local/boost_1_64_0/lib64-msvc-12.0")
+    parser.add_argument("--cgal_path", default="",
+                        help="The path to the folder containing CGAL, "
+                             "e.g., under Windows: C:/dev/CGAL-4.11.2/build")
     parser.add_argument("--cuda_path", default="",
                         help="The path to the folder containing CUDA, "
                              "e.g., under Windows: C:/Program Files/NVIDIA GPU "
                              "Computing Toolkit/CUDA/v8.0")
-    parser.add_argument("--cuda_multi_arch",
-                        dest="cuda_multi_arch", action="store_true",)
-    parser.add_argument("--no_cuda_multi_arch",
-                        dest="cuda_multi_arch", action="store_false",
-                        help="Whether to compile CUDA code for "
-                             "multiple GPU architectures (default no)")
+    parser.add_argument("--cuda_archs", default="Auto",
+                        help="List of CUDA architectures for which to generate "
+                             "code, e.g., Auto, All, Maxwell, Pascal, ...")
     parser.add_argument("--with_suite_sparse",
                         dest="with_suite_sparse", action="store_true")
     parser.add_argument("--without_suite_sparse",
                         dest="with_suite_sparse", action="store_false",
                         help="Whether to use SuiteSparse as a sparse solver "
                              "(default with SuiteSparse)")
-    parser.add_argument("--colmap_branch", default="dev",
-                        help="Which COLMAP branch to build")
-    parser.add_argument("--colmap_update",
-                        dest="colmap_update", action="store_true",
-                        help="Whether to update the COLMAP code (default no)")
-    parser.add_argument("--build_type", default="Release")
-    parser.set_defaults(cuda_multi_arch=False)
+    parser.add_argument("--with_cuda",
+                        dest="with_cuda", action="store_true")
+    parser.add_argument("--without_cuda",
+                        dest="with_cuda", action="store_false",
+                        help="Whether to enable CUDA functionality")
+    parser.add_argument("--with_opengl",
+                        dest="with_opengl", action="store_true")
+    parser.add_argument("--without_opengl",
+                        dest="with_opengl", action="store_false",
+                        help="Whether to enable OpenGL functionality")
+    parser.add_argument("--with_tests",
+                        dest="with_tests", action="store_true")
+    parser.add_argument("--without_tests",
+                        dest="with_tests", action="store_false",
+                        help="Whether to build unit tests")
+    parser.add_argument("--build_type", default="Release",
+                        help="Build type, e.g., Debug, Release, RelWithDebInfo")
+    parser.add_argument("--cmake_generator", default="",
+                        help="CMake generator, e.g., Visual Studio 14")
+    parser.add_argument("--no_ssl_verification",
+                        dest="ssl_verification", action="store_false",
+                        help="Whether to disable SSL certificate verification "
+                             "while downloading the source code")
+
     parser.set_defaults(with_suite_sparse=True)
-    parser.set_defaults(colmap_update=False)
+    parser.set_defaults(with_cuda=True)
+    parser.set_defaults(with_opengl=True)
+    parser.set_defaults(with_tests=True)
+    parser.set_defaults(ssl_verification=True)
+
     args = parser.parse_args()
 
-    args.path = os.path.abspath(args.path)
-    args.download_path = os.path.join(args.path, "__download__")
-    args.install_path = os.path.join(args.path, "__install__")
+    args.build_path = os.path.abspath(args.build_path)
+    args.download_path = os.path.join(args.build_path, "__download__")
+    args.install_path = os.path.join(args.build_path, "__install__")
 
     args.cmake_config_args = []
     args.cmake_config_args.append(
@@ -92,9 +134,14 @@ def parse_args():
         "-DCMAKE_PREFIX_PATH={}".format(args.install_path))
     args.cmake_config_args.append(
         "-DCMAKE_INSTALL_PREFIX={}".format(args.install_path))
+    if args.cmake_generator:
+        args.cmake_config_args.extend(["-G", args.cmake_generator])
     if PLATFORM_IS_WINDOWS:
         args.cmake_config_args.append(
-            "-DCMAKE_GENERATOR_PLATFORM=x64")
+            "-DCMAKE_GENERATOR_TOOLSET='host=x64'")
+        if "Win64" not in args.cmake_generator:
+            args.cmake_config_args.append(
+                "-DCMAKE_GENERATOR_PLATFORM=x64")
 
     args.cmake_build_args = ["--"]
     if PLATFORM_IS_WINDOWS:
@@ -105,6 +152,9 @@ def parse_args():
         # Assuming that the build system is Make.
         args.cmake_build_args.append(
             "-j{}".format(multiprocessing.cpu_count()))
+
+    if not args.ssl_verification:
+        ssl._create_default_https_context = ssl._create_unverified_context
 
     return args
 
@@ -121,50 +171,77 @@ def copy_file_if_not_exists(source, destination):
     shutil.copyfile(source, destination)
 
 
-def download_zipfile(url, archive_path, unzip_path):
+def check_md5_hash(path, md5_hash):
+    computed_md5_hash = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            computed_md5_hash.update(chunk)
+    computed_md5_hash = computed_md5_hash.hexdigest()
+    if md5_hash != computed_md5_hash:
+        print("MD5 mismatch for {}: {} == {}".format(
+              path, md5_hash, computed_md5_hash))
+        sys.exit(1)
+
+
+def download_zipfile(url, archive_path, unzip_path, md5_hash):
     if not os.path.exists(archive_path):
         urllib.request.urlretrieve(url, archive_path)
+    check_md5_hash(archive_path, md5_hash)
     with zipfile.ZipFile(archive_path, "r") as fid:
         fid.extractall(unzip_path)
 
 
 def build_cmake_project(args, path, extra_config_args=[],
-                        extra_build_args=[]):
+                        extra_build_args=[], cmakelists_path=".."):
     mkdir_if_not_exists(path)
-    subprocess.call(["cmake"] + args.cmake_config_args
-                     + extra_config_args + [".."], cwd=path)
-    subprocess.call(["cmake",
+
+    cmake_command = ["cmake"] \
+                    + args.cmake_config_args \
+                    + extra_config_args \
+                    + [cmakelists_path]
+    return_code = subprocess.call(cmake_command, cwd=path)
+    if return_code != 0:
+        print("Command failed:", " ".join(cmake_command))
+        sys.exit(1)
+
+    cmake_command = ["cmake",
                      "--build", ".",
                      "--target", "install",
-                     "--config", args.build_type]
-                     + args.cmake_build_args
-                     + extra_build_args, cwd=path)
+                     "--config", args.build_type] \
+                    + args.cmake_build_args \
+                    + extra_build_args
+    return_code = subprocess.call(cmake_command, cwd=path)
+    if return_code != 0:
+        print("Command failed:", " ".join(cmake_command))
+        sys.exit(1)
 
 
 def build_eigen(args):
-    path = os.path.join(args.path, "eigen")
+    path = os.path.join(args.build_path, "eigen")
     if os.path.exists(path):
         return
 
-    url = "https://github.com/RLovelett/eigen/archive/3.3.4.zip"
-    archive_path = os.path.join(args.download_path, "eigen.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path, "eigen-3.3.4"), path)
+    url = "https://bitbucket.org/eigen/eigen/get/3.3.5.zip"
+    archive_path = os.path.join(args.download_path, "eigen-3.3.5.zip")
+    download_zipfile(url, archive_path, args.build_path,
+                     "2a3e158738a4dc02f44c3fbb73d58ad7")
+    shutil.move(glob.glob(os.path.join(args.build_path, "eigen-*"))[0], path)
 
-    build_cmake_project(args, os.path.join(path, "build"))
+    build_cmake_project(args, os.path.join(path, "__build__"))
 
 
 def build_freeimage(args):
-    path = os.path.join(args.path, "freeimage")
+    path = os.path.join(args.build_path, "freeimage")
     if os.path.exists(path):
         return
 
     if PLATFORM_IS_WINDOWS:
         url = "https://kent.dl.sourceforge.net/project/freeimage/" \
-              "Binary%20Distribution/3.17.0/FreeImage3170Win32Win64.zip"
-        archive_path = os.path.join(args.download_path, "freeimage.zip")
-        download_zipfile(url, archive_path, args.path)
-        shutil.move(os.path.join(args.path, "FreeImage"), path)
+              "Binary%20Distribution/3.18.0/FreeImage3180Win32Win64.zip"
+        archive_path = os.path.join(args.download_path, "freeimage-3.18.0.zip")
+        download_zipfile(url, archive_path, args.build_path,
+                         "393d3df75b14cbcb4887da1c395596e2")
+        shutil.move(os.path.join(args.build_path, "FreeImage"), path)
         copy_file_if_not_exists(
             os.path.join(path, "Dist/x64/FreeImage.h"),
             os.path.join(args.install_path, "include/FreeImage.h"))
@@ -173,13 +250,14 @@ def build_freeimage(args):
             os.path.join(args.install_path, "lib/FreeImage.lib"))
         copy_file_if_not_exists(
             os.path.join(path, "Dist/x64/FreeImage.dll"),
-            os.path.join(args.install_path, "bin/FreeImage.dll"))
+            os.path.join(args.install_path, "lib/FreeImage.dll"))
     else:
         url = "https://kent.dl.sourceforge.net/project/freeimage/" \
-              "Source%20Distribution/3.17.0/FreeImage3170.zip"
-        archive_path = os.path.join(args.download_path, "freeimage.zip")
-        download_zipfile(url, archive_path, args.path)
-        shutil.move(os.path.join(args.path, "FreeImage"), path)
+              "Source%20Distribution/3.18.0/FreeImage3180.zip"
+        archive_path = os.path.join(args.download_path, "freeimage-3.18.0.zip")
+        download_zipfile(url, archive_path, args.build_path,
+                         "f8ba138a3be233a3eed9c456e42e2578")
+        shutil.move(os.path.join(args.build_path, "FreeImage"), path)
 
         if PLATFORM_IS_MAC:
             with fileinput.FileInput(os.path.join(path, "Makefile.gnu"),
@@ -222,81 +300,97 @@ def build_freeimage(args):
 
 
 def build_glew(args):
-    path = os.path.join(args.path, "glew")
+    path = os.path.join(args.build_path, "glew")
     if os.path.exists(path):
         return
 
     url = "https://kent.dl.sourceforge.net/project/glew/" \
           "glew/2.1.0/glew-2.1.0.zip"
-    archive_path = os.path.join(args.download_path, "glew.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path, "glew-2.1.0"), path)
+    archive_path = os.path.join(args.download_path, "glew-2.1.0.zip")
+    download_zipfile(url, archive_path, args.build_path,
+                     "dff2939fd404d054c1036cc0409d19f1")
+    shutil.move(os.path.join(args.build_path, "glew-2.1.0"), path)
 
-    build_cmake_project(args, os.path.join(path, "build/cmake/build"))
+    build_cmake_project(args, os.path.join(path, "build/cmake/__build__"))
+
+    if PLATFORM_IS_WINDOWS:
+        shutil.move(os.path.join(args.install_path, "bin/glew32.dll"),
+                    os.path.join(args.install_path, "lib/glew32.dll"))
+        os.remove(os.path.join(args.install_path, "bin/glewinfo.exe"))
+        os.remove(os.path.join(args.install_path, "bin/visualinfo.exe"))
 
 
 def build_gflags(args):
-    path = os.path.join(args.path, "gflags")
+    path = os.path.join(args.build_path, "gflags")
     if os.path.exists(path):
         return
 
     url = "https://github.com/gflags/gflags/archive/v2.2.1.zip"
-    archive_path = os.path.join(args.download_path, "gflags.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path, "gflags-2.2.1"), path)
+    archive_path = os.path.join(args.download_path, "gflags-2.2.1.zip")
+    download_zipfile(url, archive_path, args.build_path,
+                     "2d988ef0b50939fb50ada965dafce96b")
+    shutil.move(os.path.join(args.build_path, "gflags-2.2.1"), path)
     os.remove(os.path.join(path, "BUILD"))
 
-    build_cmake_project(args, os.path.join(path, "build"))
+    build_cmake_project(args, os.path.join(path, "__build__"))
 
 
 def build_glog(args):
-    path = os.path.join(args.path, "glog")
+    path = os.path.join(args.build_path, "glog")
     if os.path.exists(path):
         return
 
     url = "https://github.com/google/glog/archive/v0.3.5.zip"
-    archive_path = os.path.join(args.download_path, "glog.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path, "glog-0.3.5"), path)
+    archive_path = os.path.join(args.download_path, "glog-0.3.5.zip")
+    download_zipfile(url, archive_path, args.build_path,
+                     "454766d0124951091c95bad33dafeacd")
+    shutil.move(os.path.join(args.build_path, "glog-0.3.5"), path)
 
-    build_cmake_project(args, os.path.join(path, "build"))
+    build_cmake_project(args, os.path.join(path, "__build__"))
 
 
 def build_suite_sparse(args):
     if not args.with_suite_sparse:
         return
 
-    path = os.path.join(args.path, "suite-sparse")
+    path = os.path.join(args.build_path, "suite-sparse")
     if os.path.exists(path):
         return
 
     url = "https://codeload.github.com/jlblancoc/" \
-          "suitesparse-metis-for-windows/zip/master"
+          "suitesparse-metis-for-windows/zip/" \
+          "7bc503bfa2c4f1be9176147d36daf9e18340780a"
     archive_path = os.path.join(args.download_path, "suite-sparse.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path,
-                             "suitesparse-metis-for-windows-master"), path)
+    download_zipfile(url, archive_path, args.build_path,
+                     "e7c27075e8e0afc9d2cf188630090946")
+    shutil.move(os.path.join(args.build_path,
+                             "suitesparse-metis-for-windows-"
+                             "7bc503bfa2c4f1be9176147d36daf9e18340780a"), path)
 
-    build_cmake_project(args, os.path.join(path, "build"))
+    build_cmake_project(args, os.path.join(path, "__build__"))
 
     if PLATFORM_IS_WINDOWS:
-        lapack_blas_path = os.path.join(args.install_path,
-                                        "lib64/lapack_blas_windows/*.dll")
+        lapack_blas_path = os.path.join(path, "lapack_windows/x64/*")
+        mkdir_if_not_exists(os.path.join(args.install_path, "lib64"))
+        mkdir_if_not_exists(os.path.join(args.install_path,
+                                         "lib64/lapack_blas_windows"))
         for library_path in glob.glob(lapack_blas_path):
             copy_file_if_not_exists(
-                library_path, os.path.join(args.install_path, "bin",
+                library_path, os.path.join(args.install_path,
+                                           "lib64/lapack_blas_windows",
                                            os.path.basename(library_path)))
 
 
 def build_ceres_solver(args):
-    path = os.path.join(args.path, "ceres-solver")
+    path = os.path.join(args.build_path, "ceres-solver")
     if os.path.exists(path):
         return
 
-    url = "https://github.com/ceres-solver/ceres-solver/archive/1.13.0.zip"
-    archive_path = os.path.join(args.download_path, "ceres-solver.zip")
-    download_zipfile(url, archive_path, args.path)
-    shutil.move(os.path.join(args.path, "ceres-solver-1.13.0"), path)
+    url = "https://github.com/ceres-solver/ceres-solver/archive/1.14.0.zip"
+    archive_path = os.path.join(args.download_path, "ceres-solver-1.14.0.zip")
+    download_zipfile(url, archive_path, args.build_path,
+                     "26b255b7a9f330bbc1def3b839724a2a")
+    shutil.move(os.path.join(args.build_path, "ceres-solver-1.14.0"), path)
 
     extra_config_args = [
         "-DBUILD_TESTING=OFF",
@@ -321,29 +415,15 @@ def build_ceres_solver(args):
     if PLATFORM_IS_WINDOWS:
         extra_config_args.append("-DCMAKE_CXX_FLAGS=/DGOOGLE_GLOG_DLL_DECL=")
 
-    build_cmake_project(args, os.path.join(path, "build"),
+    build_cmake_project(args, os.path.join(path, "__build__"),
                         extra_config_args=extra_config_args)
 
 
 def build_colmap(args):
-    path = os.path.join(args.path, "colmap-{}".format(args.colmap_branch))
-    url = "https://codeload.github.com/" \
-          "colmap/colmap/zip/{}".format(args.colmap_branch)
-    archive_path = os.path.join(args.download_path,
-                                "colmap-{}.zip".format(args.colmap_branch))
-    if args.colmap_update:
-        if os.path.exists(archive_path):
-            os.remove(archive_path)
-        download_zipfile(url, archive_path, args.path)
-    elif not os.path.exists(path):
-        download_zipfile(url, archive_path, args.path)
-
     extra_config_args = []
     if args.qt_path != "":
-        extra_config_args.append("-DQt5Core_DIR={}".format(
-            os.path.join(args.qt_path, "lib/cmake/Qt5Core")))
-        extra_config_args.append("-DQt5OpenGL_DIR={}".format(
-            os.path.join(args.qt_path, "lib/cmake/Qt5OpenGL")))
+        extra_config_args.append("-DQt5_DIR={}".format(
+            os.path.join(args.qt_path, "lib/cmake/Qt5")))
 
     if args.boost_path != "":
         extra_config_args.append(
@@ -355,16 +435,35 @@ def build_colmap(args):
         extra_config_args.append(
             "-DCUDA_TOOLKIT_ROOT_DIR={}".format(args.cuda_path))
 
-    if args.cuda_multi_arch:
-        extra_config_args.append("-DCUDA_MULTI_ARCH=ON")
+    if args.with_cuda:
+        extra_config_args.append("-DCUDA_ENABLED=ON")
     else:
-        extra_config_args.append("-DCUDA_MULTI_ARCH=OFF")
+        extra_config_args.append("-DCUDA_ENABLED=OFF")
+
+    if args.cuda_archs:
+        extra_config_args.append("-DCUDA_ARCHS={}".format(args.cuda_archs))
+
+    if args.with_opengl:
+        extra_config_args.append("-DOPENGL_ENABLED=ON")
+    else:
+        extra_config_args.append("-DOPENGL_ENABLED=OFF")
+
+    if args.with_tests:
+        extra_config_args.append("-DTESTS_ENABLED=ON")
+    else:
+        extra_config_args.append("-DTESTS_ENABLED=OFF")
+
+    if args.cgal_path:
+        extra_config_args.append("-DCGAL_DIR={}".format(args.cgal_path))
 
     if PLATFORM_IS_WINDOWS:
         extra_config_args.append("-DCMAKE_CXX_FLAGS=/DGOOGLE_GLOG_DLL_DECL=")
 
-    build_cmake_project(args, os.path.join(path, "build"),
-                        extra_config_args=extra_config_args)
+    mkdir_if_not_exists(os.path.join(args.build_path, "colmap"))
+
+    build_cmake_project(args, os.path.join(args.build_path, "colmap/__build__"),
+                        extra_config_args=extra_config_args,
+                        cmakelists_path=os.path.abspath(args.colmap_path))
 
 
 def build_post_process(args):
@@ -372,19 +471,43 @@ def build_post_process(args):
         if args.qt_path:
             copy_file_if_not_exists(
                 os.path.join(args.qt_path, "bin/Qt5Core.dll"),
-                os.path.join(args.install_path, "bin/Qt5Core.dll"))
+                os.path.join(args.install_path, "lib/Qt5Core.dll"))
             copy_file_if_not_exists(
                 os.path.join(args.qt_path, "bin/Qt5Gui.dll"),
-                os.path.join(args.install_path, "bin/Qt5Gui.dll"))
+                os.path.join(args.install_path, "lib/Qt5Gui.dll"))
             copy_file_if_not_exists(
                 os.path.join(args.qt_path, "bin/Qt5Widgets.dll"),
-                os.path.join(args.install_path, "bin/Qt5Widgets.dll"))
+                os.path.join(args.install_path, "lib/Qt5Widgets.dll"))
+            mkdir_if_not_exists(
+                os.path.join(args.install_path, "lib/platforms"))
+            copy_file_if_not_exists(
+                os.path.join(args.qt_path, "plugins/platforms/qwindows.dll"),
+                os.path.join(args.install_path, "lib/platforms/qwindows.dll"))
+        if args.with_cuda and args.cuda_path:
+            cudart_lib_path = glob.glob(os.path.join(args.cuda_path,
+                                                     "bin/cudart64_*.dll"))[0]
+            copy_file_if_not_exists(
+                cudart_lib_path,
+                os.path.join(args.install_path, "lib",
+                             os.path.basename(cudart_lib_path)))
+        if args.cgal_path:
+            gmp_lib_path = os.path.join(
+                args.cgal_path, "../auxiliary/gmp/lib/libgmp-10.dll")
+            if os.path.exists(gmp_lib_path):
+                copy_file_if_not_exists(
+                    gmp_lib_path,
+                    os.path.join(args.install_path, "lib/libgmp-10.dll"))
+            copy_file_if_not_exists(
+                glob.glob(os.path.join(
+                    args.cgal_path,
+                    "build/bin/Release/CGAL-vc140-mt-*.dll"))[0],
+                os.path.join(args.install_path, "lib"))
 
 
 def main():
     args = parse_args()
 
-    mkdir_if_not_exists(args.path)
+    mkdir_if_not_exists(args.build_path)
     mkdir_if_not_exists(args.download_path)
     mkdir_if_not_exists(args.install_path)
     mkdir_if_not_exists(os.path.join(args.install_path, "include"))
@@ -406,12 +529,12 @@ def main():
     print()
     print("Successfully installed COLMAP in: {}".format(args.install_path))
     if PLATFORM_IS_WINDOWS:
-        print("  To run COLMAP, navigate to {} and run colmap.exe".format(
-                    os.path.join(args.install_path, "bin")))
+        print("  To run COLMAP, navigate to {} and run COLMAP.bat".format(
+                    args.install_path))
     else:
         print("  To run COLMAP, execute LD_LIBRARY_PATH={} {}".format(
                     os.path.join(args.install_path, "lib"),
-                    os.path.join(args.install_path, "bin/colmap")))
+                    os.path.join(args.install_path, "colmap")))
 
 
 if __name__ == "__main__":

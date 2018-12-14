@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_FEATURE_MATCHING_H_
 #define COLMAP_SRC_FEATURE_MATCHING_H_
@@ -40,7 +55,7 @@ struct ExhaustiveMatchingOptions {
 
 struct SequentialMatchingOptions {
   // Number of overlapping image pairs.
-  int overlap = 5;
+  int overlap = 10;
 
   // Whether to match images against their quadratic neighbors.
   bool quadratic_overlap = true;
@@ -53,10 +68,17 @@ struct SequentialMatchingOptions {
 
   // The number of images to retrieve in loop detection. This number should
   // be significantly bigger than the sequential matching overlap.
-  int loop_detection_num_images = 30;
+  int loop_detection_num_images = 50;
 
-  // Number of images to spatially verify for re-ranking.
-  int loop_detection_num_verifications = 0;
+  // Number of nearest neighbors to retrieve per query feature.
+  int loop_detection_num_nearest_neighbors = 1;
+
+  // Number of nearest-neighbor checks to use in retrieval.
+  int loop_detection_num_checks = 256;
+
+  // How many images to return after spatial verification. Set to 0 to turn off
+  // spatial verification.
+  int loop_detection_num_images_after_verification = 0;
 
   // The maximum number of features to use for indexing an image. If an
   // image has more features, only the largest-scale features will be indexed.
@@ -72,8 +94,15 @@ struct VocabTreeMatchingOptions {
   // Number of images to retrieve for each query image.
   int num_images = 100;
 
-  // Number of images to spatially verify for re-ranking.
-  int num_verifications = 0;
+  // Number of nearest neighbors to retrieve per query feature.
+  int num_nearest_neighbors = 5;
+
+  // Number of nearest-neighbor checks to use in retrieval.
+  int num_checks = 256;
+
+  // How many images to return after spatial verification. Set to 0 to turn off
+  // spatial verification.
+  int num_images_after_verification = 0;
 
   // The maximum number of features to use for indexing an image. If an
   // image has more features, only the largest-scale features will be indexed.
@@ -166,8 +195,8 @@ class FeatureMatcherCache {
 
   void WriteMatches(const image_t image_id1, const image_t image_id2,
                     const FeatureMatches& matches);
-  void WriteInlierMatches(const image_t image_id1, const image_t image_id2,
-                          const TwoViewGeometry& two_view_geometry);
+  void WriteTwoViewGeometry(const image_t image_id1, const image_t image_id2,
+                            const TwoViewGeometry& two_view_geometry);
 
   void DeleteMatches(const image_t image_id1, const image_t image_id2);
   void DeleteInlierMatches(const image_t image_id1, const image_t image_id2);

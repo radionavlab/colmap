@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "mvs/fusion.h"
 
@@ -43,20 +58,20 @@ float Median(std::vector<T>* elems) {
 int FindNextImage(const std::vector<std::vector<int>>& overlapping_images,
                   const std::vector<char>& used_images,
                   const std::vector<char>& fused_images,
-                  const int prev_image_id) {
+                  const int prev_image_idx) {
   CHECK_EQ(used_images.size(), fused_images.size());
 
-  for (const auto image_id : overlapping_images.at(prev_image_id)) {
-    if (used_images.at(image_id) && !fused_images.at(image_id)) {
-      return image_id;
+  for (const auto image_idx : overlapping_images.at(prev_image_idx)) {
+    if (used_images.at(image_idx) && !fused_images.at(image_idx)) {
+      return image_idx;
     }
   }
 
   // If none of the overlapping images are not yet fused, simply return the
   // first image that has not yet been fused.
-  for (size_t image_id = 0; image_id < fused_images.size(); ++image_id) {
-    if (used_images[image_id] && !fused_images[image_id]) {
-      return image_id;
+  for (size_t image_idx = 0; image_idx < fused_images.size(); ++image_idx) {
+    if (used_images[image_idx] && !fused_images[image_idx]) {
+      return image_idx;
     }
   }
 
@@ -108,12 +123,18 @@ StereoFusion::StereoFusion(const StereoFusionOptions& options,
   CHECK(options_.Check());
 }
 
-const std::vector<FusedPoint>& StereoFusion::GetFusedPoints() const {
+const std::vector<PlyPoint>& StereoFusion::GetFusedPoints() const {
   return fused_points_;
+}
+
+const std::vector<std::vector<int>>& StereoFusion::GetFusedPointsVisibility()
+    const {
+  return fused_points_visibility_;
 }
 
 void StereoFusion::Run() {
   fused_points_.clear();
+  fused_points_visibility_.clear();
 
   options_.Print();
   std::cout << std::endl;
@@ -134,7 +155,6 @@ void StereoFusion::Run() {
   workspace_options.cache_size = options_.cache_size;
   workspace_options.workspace_path = workspace_path_;
   workspace_options.workspace_format = workspace_format_;
-  workspace_options.workspace_format = workspace_format_;
   workspace_options.input_type = input_type_;
 
   workspace_.reset(new Workspace(workspace_options));
@@ -149,8 +169,12 @@ void StereoFusion::Run() {
   const auto& model = workspace_->GetModel();
 
   const double kMinTriangulationAngle = 0;
-  overlapping_images_ = model.GetMaxOverlappingImages(options_.check_num_images,
-                                                      kMinTriangulationAngle);
+  if (model.GetMaxOverlappingImagesFromPMVS().empty()) {
+    overlapping_images_ = model.GetMaxOverlappingImages(
+        options_.check_num_images, kMinTriangulationAngle);
+  } else {
+    overlapping_images_ = model.GetMaxOverlappingImagesFromPMVS();
+  }
 
   used_images_.resize(model.images.size(), false);
   fused_images_.resize(model.images.size(), false);
@@ -164,11 +188,11 @@ void StereoFusion::Run() {
   const auto image_names = ReadTextFileLines(JoinPaths(
       workspace_path_, workspace_options.stereo_folder, "fusion.cfg"));
   for (const auto& image_name : image_names) {
-    const int image_id = model.GetImageId(image_name);
+    const int image_idx = model.GetImageIdx(image_name);
 
-    if (!workspace_->HasBitmap(image_id) ||
-        !workspace_->HasDepthMap(image_id) ||
-        !workspace_->HasNormalMap(image_id)) {
+    if (!workspace_->HasBitmap(image_idx) ||
+        !workspace_->HasDepthMap(image_idx) ||
+        !workspace_->HasNormalMap(image_idx)) {
       std::cout
           << StringPrintf(
                  "WARNING: Ignoring image %s, because input does not exist.",
@@ -177,44 +201,44 @@ void StereoFusion::Run() {
       continue;
     }
 
-    const auto& image = model.images.at(image_id);
-    const auto& depth_map = workspace_->GetDepthMap(image_id);
+    const auto& image = model.images.at(image_idx);
+    const auto& depth_map = workspace_->GetDepthMap(image_idx);
 
-    used_images_.at(image_id) = true;
+    used_images_.at(image_idx) = true;
 
-    fused_pixel_masks_.at(image_id) =
+    fused_pixel_masks_.at(image_idx) =
         Mat<bool>(depth_map.GetWidth(), depth_map.GetHeight(), 1);
-    fused_pixel_masks_.at(image_id).Fill(false);
+    fused_pixel_masks_.at(image_idx).Fill(false);
 
-    depth_map_sizes_.at(image_id) =
+    depth_map_sizes_.at(image_idx) =
         std::make_pair(depth_map.GetWidth(), depth_map.GetHeight());
 
-    bitmap_scales_.at(image_id) = std::make_pair(
+    bitmap_scales_.at(image_idx) = std::make_pair(
         static_cast<float>(depth_map.GetWidth()) / image.GetWidth(),
         static_cast<float>(depth_map.GetHeight()) / image.GetHeight());
 
     Eigen::Matrix<float, 3, 3, Eigen::RowMajor> K =
         Eigen::Map<const Eigen::Matrix<float, 3, 3, Eigen::RowMajor>>(
             image.GetK());
-    K(0, 0) *= bitmap_scales_.at(image_id).first;
-    K(0, 2) *= bitmap_scales_.at(image_id).first;
-    K(1, 1) *= bitmap_scales_.at(image_id).second;
-    K(1, 2) *= bitmap_scales_.at(image_id).second;
+    K(0, 0) *= bitmap_scales_.at(image_idx).first;
+    K(0, 2) *= bitmap_scales_.at(image_idx).first;
+    K(1, 1) *= bitmap_scales_.at(image_idx).second;
+    K(1, 2) *= bitmap_scales_.at(image_idx).second;
 
     ComposeProjectionMatrix(K.data(), image.GetR(), image.GetT(),
-                            P_.at(image_id).data());
+                            P_.at(image_idx).data());
     ComposeInverseProjectionMatrix(K.data(), image.GetR(), image.GetT(),
-                                   inv_P_.at(image_id).data());
-    inv_R_.at(image_id) =
+                                   inv_P_.at(image_idx).data());
+    inv_R_.at(image_idx) =
         Eigen::Map<const Eigen::Matrix<float, 3, 3, Eigen::RowMajor>>(
             image.GetR())
             .transpose();
   }
 
   size_t num_fused_images = 0;
-  for (int image_id = 0; image_id >= 0;
-       image_id = internal::FindNextImage(overlapping_images_, used_images_,
-                                          fused_images_, image_id)) {
+  for (int image_idx = 0; image_idx >= 0;
+       image_idx = internal::FindNextImage(overlapping_images_, used_images_,
+                                           fused_images_, image_idx)) {
     if (IsStopped()) {
       break;
     }
@@ -226,12 +250,12 @@ void StereoFusion::Run() {
                               model.images.size())
               << std::flush;
 
-    const int width = depth_map_sizes_.at(image_id).first;
-    const int height = depth_map_sizes_.at(image_id).second;
-    const auto& fused_pixel_mask = fused_pixel_masks_.at(image_id);
+    const int width = depth_map_sizes_.at(image_idx).first;
+    const int height = depth_map_sizes_.at(image_idx).second;
+    const auto& fused_pixel_mask = fused_pixel_masks_.at(image_idx);
 
     FusionData data;
-    data.image_id = image_id;
+    data.image_idx = image_idx;
     data.traversal_depth = 0;
 
     for (data.row = 0; data.row < height; ++data.row) {
@@ -247,7 +271,7 @@ void StereoFusion::Run() {
     }
 
     num_fused_images += 1;
-    fused_images_.at(image_id) = true;
+    fused_images_.at(image_idx) = true;
 
     std::cout << StringPrintf(" in %.3fs (%d points)", timer.ElapsedSeconds(),
                               fused_points_.size())
@@ -255,6 +279,7 @@ void StereoFusion::Run() {
   }
 
   fused_points_.shrink_to_fit();
+  fused_points_visibility_.shrink_to_fit();
 
   if (fused_points_.empty()) {
     std::cout << "WARNING: Could not fuse any points. This is likely caused by "
@@ -273,19 +298,20 @@ void StereoFusion::Fuse() {
   Eigen::Vector4f fused_ref_point = Eigen::Vector4f::Zero();
   Eigen::Vector3f fused_ref_normal = Eigen::Vector3f::Zero();
 
-  fused_points_x_.clear();
-  fused_points_y_.clear();
-  fused_points_z_.clear();
-  fused_points_nx_.clear();
-  fused_points_ny_.clear();
-  fused_points_nz_.clear();
-  fused_points_r_.clear();
-  fused_points_g_.clear();
-  fused_points_b_.clear();
+  fused_point_x_.clear();
+  fused_point_y_.clear();
+  fused_point_z_.clear();
+  fused_point_nx_.clear();
+  fused_point_ny_.clear();
+  fused_point_nz_.clear();
+  fused_point_r_.clear();
+  fused_point_g_.clear();
+  fused_point_b_.clear();
+  fused_point_visibility_.clear();
 
   while (!fusion_queue_.empty()) {
     const auto data = fusion_queue_.back();
-    const int image_id = data.image_id;
+    const int image_idx = data.image_idx;
     const int row = data.row;
     const int col = data.col;
     const int traversal_depth = data.traversal_depth;
@@ -293,12 +319,12 @@ void StereoFusion::Fuse() {
     fusion_queue_.pop_back();
 
     // Check if pixel already fused.
-    auto& fused_pixel_mask = fused_pixel_masks_.at(image_id);
+    auto& fused_pixel_mask = fused_pixel_masks_.at(image_idx);
     if (fused_pixel_mask.Get(row, col)) {
       continue;
     }
 
-    const auto& depth_map = workspace_->GetDepthMap(image_id);
+    const auto& depth_map = workspace_->GetDepthMap(image_idx);
     const float depth = depth_map.Get(row, col);
 
     // Pixels with negative depth are filtered.
@@ -310,7 +336,7 @@ void StereoFusion::Fuse() {
     // pixel has already been added and we need to check for consistency.
     if (traversal_depth > 0) {
       // Project reference point into current view.
-      const Eigen::Vector3f proj = P_.at(image_id) * fused_ref_point;
+      const Eigen::Vector3f proj = P_.at(image_idx) * fused_ref_point;
 
       // Depth error of reference depth with current depth.
       const float depth_error = std::abs((proj(2) - depth) / depth);
@@ -329,11 +355,11 @@ void StereoFusion::Fuse() {
     }
 
     // Determine normal direction in global reference frame.
-    const auto& normal_map = workspace_->GetNormalMap(image_id);
+    const auto& normal_map = workspace_->GetNormalMap(image_idx);
     const Eigen::Vector3f normal =
-        inv_R_.at(image_id) * Eigen::Vector3f(normal_map.Get(row, col, 0),
-                                              normal_map.Get(row, col, 1),
-                                              normal_map.Get(row, col, 2));
+        inv_R_.at(image_idx) * Eigen::Vector3f(normal_map.Get(row, col, 0),
+                                               normal_map.Get(row, col, 1),
+                                               normal_map.Get(row, col, 2));
 
     // Check for consistent normal direction with reference normal.
     if (traversal_depth > 0) {
@@ -345,28 +371,29 @@ void StereoFusion::Fuse() {
 
     // Determine 3D location of current depth value.
     const Eigen::Vector3f xyz =
-        inv_P_.at(image_id) *
+        inv_P_.at(image_idx) *
         Eigen::Vector4f(col * depth, row * depth, depth, 1.0f);
 
     // Read the color of the pixel.
     BitmapColor<uint8_t> color;
-    const auto& bitmap_scale = bitmap_scales_.at(image_id);
-    workspace_->GetBitmap(image_id).InterpolateNearestNeighbor(
+    const auto& bitmap_scale = bitmap_scales_.at(image_idx);
+    workspace_->GetBitmap(image_idx).InterpolateNearestNeighbor(
         col / bitmap_scale.first, row / bitmap_scale.second, &color);
 
     // Set the current pixel as visited.
     fused_pixel_mask.Set(row, col, true);
 
     // Accumulate statistics for fused point.
-    fused_points_x_.push_back(xyz(0));
-    fused_points_y_.push_back(xyz(1));
-    fused_points_z_.push_back(xyz(2));
-    fused_points_nx_.push_back(normal(0));
-    fused_points_ny_.push_back(normal(1));
-    fused_points_nz_.push_back(normal(2));
-    fused_points_r_.push_back(color.r);
-    fused_points_g_.push_back(color.g);
-    fused_points_b_.push_back(color.b);
+    fused_point_x_.push_back(xyz(0));
+    fused_point_y_.push_back(xyz(1));
+    fused_point_z_.push_back(xyz(2));
+    fused_point_nx_.push_back(normal(0));
+    fused_point_ny_.push_back(normal(1));
+    fused_point_nz_.push_back(normal(2));
+    fused_point_r_.push_back(color.r);
+    fused_point_g_.push_back(color.g);
+    fused_point_b_.push_back(color.b);
+    fused_point_visibility_.insert(image_idx);
 
     // Remember the first pixel as the reference.
     if (traversal_depth == 0) {
@@ -374,8 +401,7 @@ void StereoFusion::Fuse() {
       fused_ref_normal = normal;
     }
 
-    if (fused_points_x_.size() >=
-        static_cast<size_t>(options_.max_num_pixels)) {
+    if (fused_point_x_.size() >= static_cast<size_t>(options_.max_num_pixels)) {
       break;
     }
 
@@ -386,19 +412,20 @@ void StereoFusion::Fuse() {
       continue;
     }
 
-    for (const auto next_image_id : overlapping_images_.at(image_id)) {
-      if (!used_images_.at(next_image_id) || fused_images_.at(next_image_id)) {
+    for (const auto next_image_idx : overlapping_images_.at(image_idx)) {
+      if (!used_images_.at(next_image_idx) ||
+          fused_images_.at(next_image_idx)) {
         continue;
       }
 
-      next_data.image_id = next_image_id;
+      next_data.image_idx = next_image_idx;
 
       const Eigen::Vector3f next_proj =
-          P_.at(next_image_id) * xyz.homogeneous();
+          P_.at(next_image_idx) * xyz.homogeneous();
       next_data.col = static_cast<int>(std::round(next_proj(0) / next_proj(2)));
       next_data.row = static_cast<int>(std::round(next_proj(1) / next_proj(2)));
 
-      const auto& depth_map_size = depth_map_sizes_.at(next_image_id);
+      const auto& depth_map_size = depth_map_sizes_.at(next_image_idx);
       if (next_data.col < 0 || next_data.row < 0 ||
           next_data.col >= depth_map_size.first ||
           next_data.row >= depth_map_size.second) {
@@ -411,103 +438,54 @@ void StereoFusion::Fuse() {
 
   fusion_queue_.clear();
 
-  const size_t num_pixels = fused_points_x_.size();
+  const size_t num_pixels = fused_point_x_.size();
   if (num_pixels >= static_cast<size_t>(options_.min_num_pixels)) {
-    FusedPoint fused_point;
+    PlyPoint fused_point;
 
     Eigen::Vector3f fused_normal;
-    fused_normal.x() = internal::Median(&fused_points_nx_);
-    fused_normal.y() = internal::Median(&fused_points_ny_);
-    fused_normal.z() = internal::Median(&fused_points_nz_);
+    fused_normal.x() = internal::Median(&fused_point_nx_);
+    fused_normal.y() = internal::Median(&fused_point_ny_);
+    fused_normal.z() = internal::Median(&fused_point_nz_);
     const float fused_normal_norm = fused_normal.norm();
     if (fused_normal_norm < std::numeric_limits<float>::epsilon()) {
       return;
     }
 
-    fused_point.x = internal::Median(&fused_points_x_);
-    fused_point.y = internal::Median(&fused_points_y_);
-    fused_point.z = internal::Median(&fused_points_z_);
+    fused_point.x = internal::Median(&fused_point_x_);
+    fused_point.y = internal::Median(&fused_point_y_);
+    fused_point.z = internal::Median(&fused_point_z_);
 
     fused_point.nx = fused_normal.x() / fused_normal_norm;
     fused_point.ny = fused_normal.y() / fused_normal_norm;
     fused_point.nz = fused_normal.z() / fused_normal_norm;
 
     fused_point.r = TruncateCast<float, uint8_t>(
-        std::round(internal::Median(&fused_points_r_)));
+        std::round(internal::Median(&fused_point_r_)));
     fused_point.g = TruncateCast<float, uint8_t>(
-        std::round(internal::Median(&fused_points_g_)));
+        std::round(internal::Median(&fused_point_g_)));
     fused_point.b = TruncateCast<float, uint8_t>(
-        std::round(internal::Median(&fused_points_b_)));
+        std::round(internal::Median(&fused_point_b_)));
 
     fused_points_.push_back(fused_point);
+    fused_points_visibility_.emplace_back(fused_point_visibility_.begin(),
+                                          fused_point_visibility_.end());
   }
 }
 
-void WritePlyText(const std::string& path,
-                  const std::vector<FusedPoint>& points) {
-  std::ofstream file(path);
+void WritePointsVisibility(
+    const std::string& path,
+    const std::vector<std::vector<int>>& points_visibility) {
+  std::fstream file(path, std::ios::out | std::ios::binary);
   CHECK(file.is_open()) << path;
 
-  file << "ply" << std::endl;
-  file << "format ascii 1.0" << std::endl;
-  file << "element vertex " << points.size() << std::endl;
-  file << "property float x" << std::endl;
-  file << "property float y" << std::endl;
-  file << "property float z" << std::endl;
-  file << "property float nx" << std::endl;
-  file << "property float ny" << std::endl;
-  file << "property float nz" << std::endl;
-  file << "property uchar red" << std::endl;
-  file << "property uchar green" << std::endl;
-  file << "property uchar blue" << std::endl;
-  file << "end_header" << std::endl;
+  WriteBinaryLittleEndian<uint64_t>(&file, points_visibility.size());
 
-  for (const auto& point : points) {
-    file << point.x << " " << point.y << " " << point.z << " " << point.nx
-         << " " << point.ny << " " << point.nz << " "
-         << static_cast<int>(point.r) << " " << static_cast<int>(point.g) << " "
-         << static_cast<int>(point.b) << std::endl;
+  for (const auto& visibility : points_visibility) {
+    WriteBinaryLittleEndian<uint32_t>(&file, visibility.size());
+    for (const auto& image_idx : visibility) {
+      WriteBinaryLittleEndian<uint32_t>(&file, image_idx);
+    }
   }
-
-  file.close();
-}
-
-void WritePlyBinary(const std::string& path,
-                    const std::vector<FusedPoint>& points) {
-  std::fstream text_file(path, std::ios::out);
-  CHECK(text_file.is_open()) << path;
-
-  text_file << "ply" << std::endl;
-  text_file << "format binary_little_endian 1.0" << std::endl;
-  text_file << "element vertex " << points.size() << std::endl;
-  text_file << "property float x" << std::endl;
-  text_file << "property float y" << std::endl;
-  text_file << "property float z" << std::endl;
-  text_file << "property float nx" << std::endl;
-  text_file << "property float ny" << std::endl;
-  text_file << "property float nz" << std::endl;
-  text_file << "property uchar red" << std::endl;
-  text_file << "property uchar green" << std::endl;
-  text_file << "property uchar blue" << std::endl;
-  text_file << "end_header" << std::endl;
-  text_file.close();
-
-  std::fstream binary_file(path,
-                           std::ios::out | std::ios::binary | std::ios::app);
-  CHECK(binary_file.is_open()) << path;
-
-  for (const auto& point : points) {
-    WriteBinaryLittleEndian<float>(&binary_file, point.x);
-    WriteBinaryLittleEndian<float>(&binary_file, point.y);
-    WriteBinaryLittleEndian<float>(&binary_file, point.z);
-    WriteBinaryLittleEndian<float>(&binary_file, point.nx);
-    WriteBinaryLittleEndian<float>(&binary_file, point.ny);
-    WriteBinaryLittleEndian<float>(&binary_file, point.nz);
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point.r);
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point.g);
-    WriteBinaryLittleEndian<uint8_t>(&binary_file, point.b);
-  }
-  binary_file.close();
 }
 
 }  // namespace mvs

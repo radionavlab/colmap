@@ -1,23 +1,39 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "base/undistortion.h"
 
 #include <fstream>
 
+#include "base/camera_models.h"
 #include "base/pose.h"
 #include "base/warp.h"
 #include "util/misc.h"
@@ -67,7 +83,7 @@ void WriteCOLMAPCommands(const bool geometric,
                          const std::string& output_prefix,
                          const std::string& indent, std::ofstream* file) {
   if (geometric) {
-    *file << indent << "$COLMAP_EXE_PATH/dense_stereo \\" << std::endl;
+    *file << indent << "$COLMAP_EXE_PATH/patch_match_stereo \\" << std::endl;
     *file << indent << "  --workspace_path " << workspace_path << " \\"
           << std::endl;
     *file << indent << "  --workspace_format " << workspace_format << " \\"
@@ -76,10 +92,12 @@ void WriteCOLMAPCommands(const bool geometric,
       *file << indent << "  --pmvs_option_name " << pmvs_option_name << " \\"
             << std::endl;
     }
-    *file << indent << "  --DenseStereo.max_image_size 2000 \\" << std::endl;
-    *file << indent << "  --DenseStereo.geom_consistency true" << std::endl;
+    *file << indent << "  --PatchMatchStereo.max_image_size 2000 \\"
+          << std::endl;
+    *file << indent << "  --PatchMatchStereo.geom_consistency true"
+          << std::endl;
   } else {
-    *file << indent << "$COLMAP_EXE_PATH/dense_stereo \\" << std::endl;
+    *file << indent << "$COLMAP_EXE_PATH/patch_match_stereo \\" << std::endl;
     *file << indent << "  --workspace_path " << workspace_path << " \\"
           << std::endl;
     *file << indent << "  --workspace_format " << workspace_format << " \\"
@@ -88,11 +106,13 @@ void WriteCOLMAPCommands(const bool geometric,
       *file << indent << "  --pmvs_option_name " << pmvs_option_name << " \\"
             << std::endl;
     }
-    *file << indent << "  --DenseStereo.max_image_size 2000 \\" << std::endl;
-    *file << indent << "  --DenseStereo.geom_consistency false" << std::endl;
+    *file << indent << "  --PatchMatchStereo.max_image_size 2000 \\"
+          << std::endl;
+    *file << indent << "  --PatchMatchStereo.geom_consistency false"
+          << std::endl;
   }
 
-  *file << indent << "$COLMAP_EXE_PATH/dense_fuser \\" << std::endl;
+  *file << indent << "$COLMAP_EXE_PATH/stereo_fusion \\" << std::endl;
   *file << indent << "  --workspace_path " << workspace_path << " \\"
         << std::endl;
   *file << indent << "  --workspace_format " << workspace_format << " \\"
@@ -109,12 +129,21 @@ void WriteCOLMAPCommands(const bool geometric,
   *file << indent << "  --output_path "
         << JoinPaths(workspace_path, output_prefix + "fused.ply") << std::endl;
 
-  *file << indent << "$COLMAP_EXE_PATH/dense_mesher \\" << std::endl;
+  *file << indent << "$COLMAP_EXE_PATH/poisson_mesher \\" << std::endl;
   *file << indent << "  --input_path "
         << JoinPaths(workspace_path, output_prefix + "fused.ply") << " \\"
         << std::endl;
   *file << indent << "  --output_path "
-        << JoinPaths(workspace_path, output_prefix + "meshed.ply") << std::endl;
+        << JoinPaths(workspace_path, output_prefix + "meshed-poisson.ply")
+        << std::endl;
+
+  *file << indent << "$COLMAP_EXE_PATH/delaunay_mesher \\" << std::endl;
+  *file << indent << "  --input_path "
+        << JoinPaths(workspace_path, output_prefix) << " \\" << std::endl;
+  *file << indent << "  --input_type dense " << std::endl;
+  *file << indent << "  --output_path "
+        << JoinPaths(workspace_path, output_prefix + "meshed-delaunay.ply")
+        << std::endl;
 }
 
 }  // namespace
@@ -634,6 +663,12 @@ Camera UndistortCamera(const UndistortCameraOptions& options,
   CHECK_GT(options.min_scale, 0.0);
   CHECK_LE(options.min_scale, options.max_scale);
   CHECK_NE(options.max_image_size, 0);
+  CHECK_GE(options.roi_min_x, 0.0);
+  CHECK_GE(options.roi_min_y, 0.0);
+  CHECK_LE(options.roi_max_x, 1.0);
+  CHECK_LE(options.roi_max_y, 1.0);
+  CHECK_LT(options.roi_min_x, options.roi_max_x);
+  CHECK_LT(options.roi_min_y, options.roi_max_y);
 
   Camera undistorted_camera;
   undistorted_camera.SetModelId(PinholeCameraModel::model_id);
@@ -656,18 +691,51 @@ Camera UndistortCamera(const UndistortCameraOptions& options,
   undistorted_camera.SetPrincipalPointX(camera.PrincipalPointX());
   undistorted_camera.SetPrincipalPointY(camera.PrincipalPointY());
 
-  // Scale the image such the the boundary of the undistorted image.
-  if (camera.ModelId() != SimplePinholeCameraModel::model_id &&
-      camera.ModelId() != PinholeCameraModel::model_id) {
+  // Modify undistorted camera parameters based on ROI if enabled
+  size_t roi_min_x = 0;
+  size_t roi_min_y = 0;
+  size_t roi_max_x = camera.Width();
+  size_t roi_max_y = camera.Height();
 
-    // Determine min, max coordinates along top / bottom image border.
+  const bool roi_enabled = options.roi_min_x > 0.0 || options.roi_min_y > 0.0 ||
+                           options.roi_max_x < 1.0 || options.roi_max_y < 1.0;
+
+  if (roi_enabled) {
+    roi_min_x = static_cast<size_t>(
+        std::round(options.roi_min_x * static_cast<double>(camera.Width())));
+    roi_min_y = static_cast<size_t>(
+        std::round(options.roi_min_y * static_cast<double>(camera.Height())));
+    roi_max_x = static_cast<size_t>(
+        std::round(options.roi_max_x * static_cast<double>(camera.Width())));
+    roi_max_y = static_cast<size_t>(
+        std::round(options.roi_max_y * static_cast<double>(camera.Height())));
+
+    // Make sure that the roi is valid.
+    roi_min_x = std::min(roi_min_x, camera.Width() - 1);
+    roi_min_y = std::min(roi_min_y, camera.Height() - 1);
+    roi_max_x = std::max(roi_max_x, roi_min_x + 1);
+    roi_max_y = std::max(roi_max_y, roi_min_y + 1);
+
+    undistorted_camera.SetWidth(roi_max_x - roi_min_x);
+    undistorted_camera.SetHeight(roi_max_y - roi_min_y);
+
+    undistorted_camera.SetPrincipalPointX(camera.PrincipalPointX() -
+                                          static_cast<double>(roi_min_x));
+    undistorted_camera.SetPrincipalPointY(camera.PrincipalPointY() -
+                                          static_cast<double>(roi_min_y));
+  }
+
+  // Scale the image such the the boundary of the undistorted image.
+  if (roi_enabled || (camera.ModelId() != SimplePinholeCameraModel::model_id &&
+                      camera.ModelId() != PinholeCameraModel::model_id)) {
+    // Determine min/max coordinates along top / bottom image border.
 
     double left_min_x = std::numeric_limits<double>::max();
     double left_max_x = std::numeric_limits<double>::lowest();
     double right_min_x = std::numeric_limits<double>::max();
     double right_max_x = std::numeric_limits<double>::lowest();
 
-    for (size_t y = 0; y < camera.Height(); ++y) {
+    for (size_t y = roi_min_y; y < roi_max_y; ++y) {
       // Left border.
       const Eigen::Vector2d world_point1 =
           camera.ImageToWorld(Eigen::Vector2d(0.5, y + 0.5));
@@ -691,7 +759,7 @@ Camera UndistortCamera(const UndistortCameraOptions& options,
     double bottom_min_y = std::numeric_limits<double>::max();
     double bottom_max_y = std::numeric_limits<double>::lowest();
 
-    for (size_t x = 0; x < camera.Width(); ++x) {
+    for (size_t x = roi_min_x; x < roi_max_x; ++x) {
       // Top border.
       const Eigen::Vector2d world_point1 =
           camera.ImageToWorld(Eigen::Vector2d(x + 0.5, 0.5));
@@ -711,21 +779,21 @@ Camera UndistortCamera(const UndistortCameraOptions& options,
     const double cx = undistorted_camera.PrincipalPointX();
     const double cy = undistorted_camera.PrincipalPointY();
 
-    // Scale such that undistorted image contains all pixels of distorted image
+    // Scale such that undistorted image contains all pixels of distorted image.
     const double min_scale_x =
         std::min(cx / (cx - left_min_x),
-                 (camera.Width() - 0.5 - cx) / (right_max_x - cx));
-    const double min_scale_y =
-        std::min(cy / (cy - top_min_y),
-                 (camera.Height() - 0.5 - cy) / (bottom_max_y - cy));
+                 (undistorted_camera.Width() - 0.5 - cx) / (right_max_x - cx));
+    const double min_scale_y = std::min(
+        cy / (cy - top_min_y),
+        (undistorted_camera.Height() - 0.5 - cy) / (bottom_max_y - cy));
 
-    // Scale such that there are no blank pixels in undistorted image
+    // Scale such that there are no blank pixels in undistorted image.
     const double max_scale_x =
         std::max(cx / (cx - left_max_x),
-                 (camera.Width() - 0.5 - cx) / (right_min_x - cx));
-    const double max_scale_y =
-        std::max(cy / (cy - top_max_y),
-                 (camera.Height() - 0.5 - cy) / (bottom_min_y - cy));
+                 (undistorted_camera.Width() - 0.5 - cx) / (right_min_x - cx));
+    const double max_scale_y = std::max(
+        cy / (cy - top_max_y),
+        (undistorted_camera.Height() - 0.5 - cy) / (bottom_min_y - cy));
 
     // Interpolate scale according to blank_pixels.
     double scale_x = 1.0 / (min_scale_x * options.blank_pixels +
@@ -738,18 +806,22 @@ Camera UndistortCamera(const UndistortCameraOptions& options,
     scale_y = Clip(scale_y, options.min_scale, options.max_scale);
 
     // Scale undistorted camera dimensions.
+    const size_t orig_undistorted_camera_width = undistorted_camera.Width();
+    const size_t orig_undistorted_camera_height = undistorted_camera.Height();
     undistorted_camera.SetWidth(static_cast<size_t>(
         std::max(1.0, scale_x * undistorted_camera.Width())));
     undistorted_camera.SetHeight(static_cast<size_t>(
         std::max(1.0, scale_y * undistorted_camera.Height())));
 
-    // Scale the principal point according to the new dimensions of the image.
+    // Scale the principal point according to the new dimensions of the camera.
     undistorted_camera.SetPrincipalPointX(
         undistorted_camera.PrincipalPointX() *
-        static_cast<double>(undistorted_camera.Width()) / camera.Width());
+        static_cast<double>(undistorted_camera.Width()) /
+        static_cast<double>(orig_undistorted_camera_width));
     undistorted_camera.SetPrincipalPointY(
         undistorted_camera.PrincipalPointY() *
-        static_cast<double>(undistorted_camera.Height()) / camera.Height());
+        static_cast<double>(undistorted_camera.Height()) /
+        static_cast<double>(orig_undistorted_camera_height));
   }
 
   if (options.max_image_size > 0) {

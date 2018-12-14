@@ -1,21 +1,38 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_BASE_IMAGE_READER_H_
 #define COLMAP_SRC_BASE_IMAGE_READER_H_
+
+#include <unordered_set>
 
 #include "base/database.h"
 #include "util/bitmap.h"
@@ -27,8 +44,17 @@ struct ImageReaderOptions {
   // Path to database in which to store the extracted data.
   std::string database_path = "";
 
-  // Root path to folder which contains the image.
+  // Root path to folder which contains the images.
   std::string image_path = "";
+
+  // Optional root path to folder which contains image masks. For a given image,
+  // the corresponding mask must have the same sub-path below this root as the
+  // image has below image_path. The filename must be equal, aside from the
+  // added extension .png. For example, for an image image_path/abc/012.jpg, the
+  // mask would be mask_path/abc/012.jpg.png. No features will be extracted in
+  // regions where the mask image is black (pixel intensity value 0 in
+  // grayscale).
+  std::string mask_path = "";
 
   // Optional list of images to read. The list must contain the relative path
   // of the images with respect to the image_path.
@@ -40,7 +66,14 @@ struct ImageReaderOptions {
   // Whether to use the same camera for all images.
   bool single_camera = false;
 
-  // Specification of manual camera parameters. If empty, camera parameters
+  // Whether to use the same camera for all images in the same sub-folder.
+  bool single_camera_per_folder = false;
+
+  // Whether to explicitly use an existing camera for all images. Note that in
+  // this case the specified camera model and parameters are ignored.
+  int existing_camera_id = kInvalidCameraId;
+
+  // Manual specification of camera parameters. If empty, camera parameters
   // will be extracted from EXIF, i.e. principal point and focal length.
   std::string camera_params = "";
 
@@ -48,6 +81,11 @@ struct ImageReaderOptions {
   // have focal length EXIF information, the focal length is set to the
   // value `default_focal_length_factor * max(width, height)`.
   double default_focal_length_factor = 1.2;
+  
+  // Optional path to an image file specifying a mask for all images. No
+  // features will be extracted in regions where the mask is black (pixel
+  // intensity value 0 in grayscale).
+  std::string camera_mask_path = "";
 
   bool Check() const;
 };
@@ -62,14 +100,14 @@ class ImageReader {
     SUCCESS,
     IMAGE_EXISTS,
     BITMAP_ERROR,
-    CAMERA_SINGLE_ERROR,
-    CAMERA_DIM_ERROR,
+    CAMERA_SINGLE_DIM_ERROR,
+    CAMERA_EXIST_DIM_ERROR,
     CAMERA_PARAM_ERROR
   };
 
-  explicit ImageReader(const ImageReaderOptions& options, Database* database);
+  ImageReader(const ImageReaderOptions& options, Database* database);
 
-  Status Next(Camera* camera, Image* image, Bitmap* bitmap);
+  Status Next(Camera* camera, Image* image, Bitmap* bitmap, Bitmap* mask);
   size_t NextIndex() const;
   size_t NumImages() const;
 
@@ -81,6 +119,9 @@ class ImageReader {
   size_t image_index_;
   // Previously processed camera.
   Camera prev_camera_;
+  // Names of image sub-folders.
+  std::string prev_image_folder_;
+  std::unordered_set<std::string> image_folders_;
 };
 
 }  // namespace colmap

@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_RETRIEVAL_INVERTED_FILE_H_
 #define COLMAP_SRC_RETRIEVAL_INVERTED_FILE_H_
@@ -21,6 +36,7 @@
 #include <bitset>
 #include <cstdint>
 #include <fstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -76,8 +92,8 @@ class InvertedFile {
   // information stored in an inverted file entry. In particular, this function
   // generates the binary descriptor for the inverted file entry and then stores
   // the entry in the inverted file.
-  void AddEntry(const int image_id, const DescType& descriptor,
-                const GeomType& geometry);
+  void AddEntry(const int image_id, typename DescType::Index feature_idx,
+                const DescType& descriptor, const GeomType& geometry);
 
   // Sorts the inverted file entries in ascending order of image ids. This is
   // required for efficient scoring and must be called before ScoreFeature.
@@ -118,7 +134,7 @@ class InvertedFile {
   // entry corresponding to that image. This function is useful to determine the
   // normalization factor for each image that is used during retrieval.
   void ComputeImageSelfSimilarities(
-      std::vector<double>* self_similarities) const;
+      std::unordered_map<int, double>* self_similarities) const;
 
   // Read/write the inverted file from/to a binary file.
   void Read(std::ifstream* ifs);
@@ -191,12 +207,14 @@ bool InvertedFile<kEmbeddingDim>::IsUsable() const {
 
 template <int kEmbeddingDim>
 void InvertedFile<kEmbeddingDim>::AddEntry(const int image_id,
+                                           typename DescType::Index feature_idx,
                                            const DescType& descriptor,
                                            const GeomType& geometry) {
   CHECK_GE(image_id, 0);
   CHECK_EQ(descriptor.size(), kEmbeddingDim);
   EntryType entry;
   entry.image_id = image_id;
+  entry.feature_idx = feature_idx;
   entry.geometry = geometry;
   ConvertToBinaryDescriptor(descriptor, &entry.descriptor);
   entries_.push_back(entry);
@@ -245,8 +263,8 @@ void InvertedFile<kEmbeddingDim>::ComputeIDFWeight(const int num_total_images) {
   std::unordered_set<int> image_ids;
   GetImageIds(&image_ids);
 
-  idf_weight_ = std::log1p(static_cast<double>(num_total_images) /
-                           static_cast<double>(image_ids.size()));
+  idf_weight_ = std::log(static_cast<double>(num_total_images) /
+                         static_cast<double>(image_ids.size()));
 }
 
 template <int kEmbeddingDim>
@@ -307,7 +325,7 @@ void InvertedFile<kEmbeddingDim>::ScoreFeature(
         // the database image match the current image feature. This is
         // required to perform burstiness normalization (cf. Eqn. 2 in
         // Arandjelovic, Zisserman: Scalable descriptor
-        // distinctiveness for location recognition. ACCV 2014.
+        // distinctiveness for location recognition. ACCV 2014).
         // Notice that the weight from the descriptor matching is already
         // accumulated in image_score.score, i.e., we only need
         // to apply the burstiness weighting.
@@ -323,8 +341,10 @@ void InvertedFile<kEmbeddingDim>::ScoreFeature(
 
     const size_t hamming_dist = (bin_descriptor ^ entry.descriptor).count();
 
-    image_score.score += hamming_dist_weight_functor_(hamming_dist);
-    num_image_votes += 1;
+    if (hamming_dist <= hamming_dist_weight_functor_.kMaxHammingDistance) {
+      image_score.score += hamming_dist_weight_functor_(hamming_dist);
+      num_image_votes += 1;
+    }
   }
 
   // Add the voting for the largest image_id in the entries.
@@ -345,10 +365,10 @@ void InvertedFile<kEmbeddingDim>::GetImageIds(
 
 template <int kEmbeddingDim>
 void InvertedFile<kEmbeddingDim>::ComputeImageSelfSimilarities(
-    std::vector<double>* self_similarities) const {
+    std::unordered_map<int, double>* self_similarities) const {
   const double squared_idf_weight = idf_weight_ * idf_weight_;
   for (const auto& entry : entries_) {
-    self_similarities->at(entry.image_id) += squared_idf_weight;
+    (*self_similarities)[entry.image_id] += squared_idf_weight;
   }
 }
 

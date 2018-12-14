@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "feature/sift.h"
 
@@ -20,9 +35,9 @@
 #include <fstream>
 #include <memory>
 
-#include "ext/SiftGPU/SiftGPU.h"
-#include "ext/VLFeat/covdet.h"
-#include "ext/VLFeat/sift.h"
+#include "SiftGPU/SiftGPU.h"
+#include "VLFeat/covdet.h"
+#include "VLFeat/sift.h"
 #include "feature/utils.h"
 #include "util/cuda.h"
 #include "util/logging.h"
@@ -32,6 +47,11 @@
 
 namespace colmap {
 namespace {
+
+// Mutexes that ensure that only one thread extracts/matches on the same GPU
+// at the same time, since SiftGPU internally uses static variables.
+static std::map<int, std::unique_ptr<std::mutex>> sift_extraction_mutexes;
+static std::map<int, std::unique_ptr<std::mutex>> sift_matching_mutexes;
 
 // VLFeat uses a different convention to store its descriptors. This transforms
 // the VLFeat format into the original SIFT format that is also used by SiftGPU.
@@ -220,7 +240,9 @@ bool SiftMatchingOptions::Check() const {
   CHECK_OPTION_GT(max_ratio, 0.0);
   CHECK_OPTION_GT(max_distance, 0.0);
   CHECK_OPTION_GT(max_error, 0.0);
+  CHECK_OPTION_GE(min_num_trials, 0);
   CHECK_OPTION_GT(max_num_trials, 0);
+  CHECK_OPTION_LE(min_num_trials, max_num_trials);
   CHECK_OPTION_GE(min_inlier_ratio, 0);
   CHECK_OPTION_LE(min_inlier_ratio, 1);
   CHECK_OPTION_GE(min_num_inliers, 0);
@@ -661,6 +683,12 @@ bool CreateSiftGPUExtractor(const SiftExtractionOptions& options,
 
   sift_gpu->ParseParam(sift_gpu_args_cstr.size(), sift_gpu_args_cstr.data());
 
+  sift_gpu->gpu_index = gpu_indices[0];
+  if (sift_extraction_mutexes.count(gpu_indices[0]) == 0) {
+    sift_extraction_mutexes.emplace(
+        gpu_indices[0], std::unique_ptr<std::mutex>(new std::mutex()));
+  }
+
   return sift_gpu->VerifyContextGL() == SiftGPU::SIFTGPU_FULL_SUPPORTED;
 }
 
@@ -676,6 +704,9 @@ bool ExtractSiftFeaturesGPU(const SiftExtractionOptions& options,
 
   CHECK(!options.estimate_affine_shape);
   CHECK(!options.domain_size_pooling);
+
+  std::unique_lock<std::mutex> lock(
+      *sift_extraction_mutexes[sift_gpu->gpu_index]);
 
   // Note, that this produces slightly different results than using SiftGPU
   // directly for RGB->GRAY conversion, since it uses different weights.
@@ -898,6 +929,12 @@ bool CreateSiftGPUMatcher(const SiftMatchingOptions& match_options,
   }
 #endif  // CUDA_ENABLED
 
+  sift_match_gpu->gpu_index = gpu_indices[0];
+  if (sift_matching_mutexes.count(gpu_indices[0]) == 0) {
+    sift_matching_mutexes.emplace(
+        gpu_indices[0], std::unique_ptr<std::mutex>(new std::mutex()));
+  }
+
   return true;
 }
 
@@ -909,6 +946,9 @@ void MatchSiftFeaturesGPU(const SiftMatchingOptions& match_options,
   CHECK(match_options.Check());
   CHECK_NOTNULL(sift_match_gpu);
   CHECK_NOTNULL(matches);
+
+  std::unique_lock<std::mutex> lock(
+      *sift_matching_mutexes[sift_match_gpu->gpu_index]);
 
   if (descriptors1 != nullptr) {
     CHECK_EQ(descriptors1->cols(), 128);
@@ -961,6 +1001,9 @@ void MatchGuidedSiftFeaturesGPU(const SiftMatchingOptions& match_options,
   CHECK(match_options.Check());
   CHECK_NOTNULL(sift_match_gpu);
   CHECK_NOTNULL(two_view_geometry);
+
+  std::unique_lock<std::mutex> lock(
+      *sift_matching_mutexes[sift_match_gpu->gpu_index]);
 
   const size_t kFeatureShapeNumElems = 4;
 

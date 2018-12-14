@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "ui/dense_reconstruction_widget.h"
 
@@ -26,46 +41,57 @@ namespace colmap {
 namespace {
 
 const static std::string kFusedFileName = "fused.ply";
-const static std::string kMeshedFileName = "meshed.ply";
+const static std::string kPoissonMeshedFileName = "meshed-poisson.ply";
+const static std::string kDelaunayMeshedFileName = "meshed-delaunay.ply";
 
 class StereoOptionsTab : public OptionsWidget {
  public:
   StereoOptionsTab(QWidget* parent, OptionManager* options)
       : OptionsWidget(parent) {
     // Set a relatively small default image size to avoid too long computation.
-    if (options->dense_stereo->max_image_size == -1) {
-      options->dense_stereo->max_image_size = 2000;
+    if (options->patch_match_stereo->max_image_size == -1) {
+      options->patch_match_stereo->max_image_size = 2000;
     }
 
-    AddOptionInt(&options->dense_stereo->max_image_size, "max_image_size", -1);
-    AddOptionText(&options->dense_stereo->gpu_index, "gpu_index");
-    AddOptionInt(&options->dense_stereo->window_radius, "window_radius");
-    AddOptionDouble(&options->dense_stereo->sigma_spatial, "sigma_spatial");
-    AddOptionDouble(&options->dense_stereo->sigma_color, "sigma_color");
-    AddOptionInt(&options->dense_stereo->num_samples, "num_samples");
-    AddOptionDouble(&options->dense_stereo->ncc_sigma, "ncc_sigma");
-    AddOptionDouble(&options->dense_stereo->min_triangulation_angle,
+    AddOptionInt(&options->patch_match_stereo->max_image_size, "max_image_size",
+                 -1);
+    AddOptionText(&options->patch_match_stereo->gpu_index, "gpu_index");
+    AddOptionDouble(&options->patch_match_stereo->depth_min, "depth_min", -1);
+    AddOptionDouble(&options->patch_match_stereo->depth_max, "depth_max", -1);
+    AddOptionInt(&options->patch_match_stereo->window_radius, "window_radius");
+    AddOptionInt(&options->patch_match_stereo->window_step, "window_step");
+    AddOptionDouble(&options->patch_match_stereo->sigma_spatial,
+                    "sigma_spatial", -1);
+    AddOptionDouble(&options->patch_match_stereo->sigma_color, "sigma_color");
+    AddOptionInt(&options->patch_match_stereo->num_samples, "num_samples");
+    AddOptionDouble(&options->patch_match_stereo->ncc_sigma, "ncc_sigma");
+    AddOptionDouble(&options->patch_match_stereo->min_triangulation_angle,
                     "min_triangulation_angle");
-    AddOptionDouble(&options->dense_stereo->incident_angle_sigma,
+    AddOptionDouble(&options->patch_match_stereo->incident_angle_sigma,
                     "incident_angle_sigma");
-    AddOptionInt(&options->dense_stereo->num_iterations, "num_iterations");
-    AddOptionBool(&options->dense_stereo->geom_consistency, "geom_consistency");
-    AddOptionDouble(&options->dense_stereo->geom_consistency_regularizer,
+    AddOptionInt(&options->patch_match_stereo->num_iterations,
+                 "num_iterations");
+    AddOptionBool(&options->patch_match_stereo->geom_consistency,
+                  "geom_consistency");
+    AddOptionDouble(&options->patch_match_stereo->geom_consistency_regularizer,
                     "geom_consistency_regularizer");
-    AddOptionDouble(&options->dense_stereo->geom_consistency_max_cost,
+    AddOptionDouble(&options->patch_match_stereo->geom_consistency_max_cost,
                     "geom_consistency_max_cost");
-    AddOptionBool(&options->dense_stereo->filter, "filter");
-    AddOptionDouble(&options->dense_stereo->filter_min_ncc, "filter_min_ncc");
-    AddOptionDouble(&options->dense_stereo->filter_min_triangulation_angle,
-                    "filter_min_triangulation_angle");
-    AddOptionInt(&options->dense_stereo->filter_min_num_consistent,
+    AddOptionBool(&options->patch_match_stereo->filter, "filter");
+    AddOptionDouble(&options->patch_match_stereo->filter_min_ncc,
+                    "filter_min_ncc");
+    AddOptionDouble(
+        &options->patch_match_stereo->filter_min_triangulation_angle,
+        "filter_min_triangulation_angle");
+    AddOptionInt(&options->patch_match_stereo->filter_min_num_consistent,
                  "filter_min_num_consistent");
-    AddOptionDouble(&options->dense_stereo->filter_geom_consistency_max_cost,
-                    "filter_geom_consistency_max_cost");
-    AddOptionDouble(&options->dense_stereo->cache_size,
+    AddOptionDouble(
+        &options->patch_match_stereo->filter_geom_consistency_max_cost,
+        "filter_geom_consistency_max_cost");
+    AddOptionDouble(&options->patch_match_stereo->cache_size,
                     "cache_size [gigabytes]", 0,
                     std::numeric_limits<double>::max(), 0.1, 1);
-    AddOptionBool(&options->dense_stereo->write_consistency_graph,
+    AddOptionBool(&options->patch_match_stereo->write_consistency_graph,
                   "write_consistency_graph");
   }
 };
@@ -74,20 +100,20 @@ class FusionOptionsTab : public OptionsWidget {
  public:
   FusionOptionsTab(QWidget* parent, OptionManager* options)
       : OptionsWidget(parent) {
-    AddOptionInt(&options->dense_fusion->max_image_size, "max_image_size", -1);
-    AddOptionInt(&options->dense_fusion->min_num_pixels, "min_num_pixels", 0);
-    AddOptionInt(&options->dense_fusion->max_num_pixels, "max_num_pixels", 0);
-    AddOptionInt(&options->dense_fusion->max_traversal_depth,
+    AddOptionInt(&options->stereo_fusion->max_image_size, "max_image_size", -1);
+    AddOptionInt(&options->stereo_fusion->min_num_pixels, "min_num_pixels", 0);
+    AddOptionInt(&options->stereo_fusion->max_num_pixels, "max_num_pixels", 0);
+    AddOptionInt(&options->stereo_fusion->max_traversal_depth,
                  "max_traversal_depth", 1);
-    AddOptionDouble(&options->dense_fusion->max_reproj_error,
+    AddOptionDouble(&options->stereo_fusion->max_reproj_error,
                     "max_reproj_error", 0);
-    AddOptionDouble(&options->dense_fusion->max_depth_error, "max_depth_error",
+    AddOptionDouble(&options->stereo_fusion->max_depth_error, "max_depth_error",
                     0, 1, 0.0001, 4);
-    AddOptionDouble(&options->dense_fusion->max_normal_error,
+    AddOptionDouble(&options->stereo_fusion->max_normal_error,
                     "max_normal_error", 0, 180);
-    AddOptionInt(&options->dense_fusion->check_num_images, "check_num_images",
+    AddOptionInt(&options->stereo_fusion->check_num_images, "check_num_images",
                  1);
-    AddOptionDouble(&options->dense_fusion->cache_size,
+    AddOptionDouble(&options->stereo_fusion->cache_size,
                     "cache_size [gigabytes]", 0,
                     std::numeric_limits<double>::max(), 0.1, 1);
   }
@@ -97,11 +123,27 @@ class MeshingOptionsTab : public OptionsWidget {
  public:
   MeshingOptionsTab(QWidget* parent, OptionManager* options)
       : OptionsWidget(parent) {
-    AddOptionDouble(&options->dense_meshing->point_weight, "point_weight", 0);
-    AddOptionInt(&options->dense_meshing->depth, "depth", 1);
-    AddOptionDouble(&options->dense_meshing->color, "color", 0);
-    AddOptionDouble(&options->dense_meshing->trim, "trim", 0);
-    AddOptionInt(&options->dense_meshing->num_threads, "num_threads", -1);
+    AddSection("Poisson Meshing");
+    AddOptionDouble(&options->poisson_meshing->point_weight, "point_weight", 0);
+    AddOptionInt(&options->poisson_meshing->depth, "depth", 1);
+    AddOptionDouble(&options->poisson_meshing->color, "color", 0);
+    AddOptionDouble(&options->poisson_meshing->trim, "trim", 0);
+    AddOptionInt(&options->poisson_meshing->num_threads, "num_threads", -1);
+
+    AddSection("Delaunay Meshing");
+    AddOptionDouble(&options->delaunay_meshing->max_proj_dist, "max_proj_dist",
+                    0);
+    AddOptionDouble(&options->delaunay_meshing->max_depth_dist,
+                    "max_depth_dist", 0);
+    AddOptionDouble(&options->delaunay_meshing->distance_sigma_factor,
+                    "distance_sigma_factor", 0);
+    AddOptionDouble(&options->delaunay_meshing->quality_regularization,
+                    "quality_regularization", 0);
+    AddOptionDouble(&options->delaunay_meshing->max_side_length_factor,
+                    "max_side_length_factor", 0);
+    AddOptionDouble(&options->delaunay_meshing->max_side_length_percentile,
+                    "max_side_length_percentile", 0);
+    AddOptionInt(&options->delaunay_meshing->num_threads, "num_threads", -1);
   }
 };
 
@@ -165,7 +207,7 @@ DenseReconstructionWidget::DenseReconstructionWidget(MainWindow* main_window,
   setWindowFlags(Qt::Dialog);
   setWindowModality(Qt::ApplicationModal);
   setWindowTitle("Dense reconstruction");
-  resize(main_window_->size().width() - 200,
+  resize(main_window_->size().width() - 20,
          main_window_->size().height() - 20);
 
   QGridLayout* grid = new QGridLayout(this);
@@ -185,29 +227,39 @@ DenseReconstructionWidget::DenseReconstructionWidget(MainWindow* main_window,
           &DenseReconstructionWidget::Fusion);
   grid->addWidget(fusion_button_, 0, 2, Qt::AlignLeft);
 
-  meshing_button_ = new QPushButton(tr("Meshing"), this);
-  connect(meshing_button_, &QPushButton::released, this,
-          &DenseReconstructionWidget::Meshing);
-  grid->addWidget(meshing_button_, 0, 3, Qt::AlignLeft);
+  poisson_meshing_button_ = new QPushButton(tr("Poisson"), this);
+  connect(poisson_meshing_button_, &QPushButton::released, this,
+          &DenseReconstructionWidget::PoissonMeshing);
+  grid->addWidget(poisson_meshing_button_, 0, 3, Qt::AlignLeft);
+
+  delaunay_meshing_button_ = new QPushButton(tr("Delaunay"), this);
+  connect(delaunay_meshing_button_, &QPushButton::released, this,
+          &DenseReconstructionWidget::DelaunayMeshing);
+  grid->addWidget(delaunay_meshing_button_, 0, 4, Qt::AlignLeft);
 
   QPushButton* options_button = new QPushButton(tr("Options"), this);
   connect(options_button, &QPushButton::released, options_widget_,
           &OptionsWidget::show);
-  grid->addWidget(options_button, 0, 4, Qt::AlignLeft);
+  grid->addWidget(options_button, 0, 5, Qt::AlignLeft);
 
   QLabel* workspace_path_label = new QLabel("Workspace", this);
-  grid->addWidget(workspace_path_label, 0, 5, Qt::AlignRight);
+  grid->addWidget(workspace_path_label, 0, 6, Qt::AlignRight);
 
   workspace_path_text_ = new QLineEdit(this);
-  grid->addWidget(workspace_path_text_, 0, 6, Qt::AlignRight);
+  grid->addWidget(workspace_path_text_, 0, 7, Qt::AlignRight);
   connect(workspace_path_text_, &QLineEdit::textChanged, this,
           &DenseReconstructionWidget::RefreshWorkspace, Qt::QueuedConnection);
+
+  QPushButton* refresh_path_button = new QPushButton(tr("Refresh"), this);
+  connect(refresh_path_button, &QPushButton::released, this,
+          &DenseReconstructionWidget::RefreshWorkspace, Qt::QueuedConnection);
+  grid->addWidget(refresh_path_button, 0, 8, Qt::AlignRight);
 
   QPushButton* workspace_path_button = new QPushButton(tr("Select"), this);
   connect(workspace_path_button, &QPushButton::released, this,
           &DenseReconstructionWidget::SelectWorkspacePath,
           Qt::QueuedConnection);
-  grid->addWidget(workspace_path_button, 0, 7, Qt::AlignRight);
+  grid->addWidget(workspace_path_button, 0, 9, Qt::AlignRight);
 
   QStringList table_header;
   table_header << "image_name"
@@ -226,12 +278,11 @@ DenseReconstructionWidget::DenseReconstructionWidget(MainWindow* main_window,
   table_widget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   table_widget_->verticalHeader()->setDefaultSectionSize(25);
 
-  grid->addWidget(table_widget_, 1, 0, 1, 8);
+  grid->addWidget(table_widget_, 1, 0, 1, 10);
 
   grid->setColumnStretch(4, 1);
 
   image_viewer_widget_ = new ImageViewerWidget(this);
-  image_viewer_widget_->setWindowFlags(Qt::Dialog);
   image_viewer_widget_->setWindowModality(Qt::ApplicationModal);
 
   refresh_workspace_action_ = new QAction(this);
@@ -268,6 +319,7 @@ void DenseReconstructionWidget::Undistort() {
   if (reconstruction_ == nullptr || reconstruction_->NumRegImages() < 2) {
     QMessageBox::critical(this, "",
                           tr("No reconstruction selected in main window"));
+    return;
   }
 
   COLMAPUndistorter* undistorter =
@@ -286,12 +338,14 @@ void DenseReconstructionWidget::Stereo() {
 
 #ifdef CUDA_ENABLED
   mvs::PatchMatchController* processor = new mvs::PatchMatchController(
-      *options_->dense_stereo, workspace_path, "COLMAP", "");
+      *options_->patch_match_stereo, workspace_path, "COLMAP", "");
   processor->AddCallback(Thread::FINISHED_CALLBACK,
                          [this]() { refresh_workspace_action_->trigger(); });
   thread_control_widget_->StartThread("Stereo...", true, processor);
 #else
-  QMessageBox::critical(this, "", tr("CUDA not supported"));
+  QMessageBox::critical(this, "",
+                        tr("Dense stereo reconstruction requires CUDA, which "
+                           "is not available on your system."));
 #endif
 }
 
@@ -312,29 +366,54 @@ void DenseReconstructionWidget::Fusion() {
   }
 
   mvs::StereoFusion* fuser = new mvs::StereoFusion(
-      *options_->dense_fusion, workspace_path, "COLMAP", "", input_type);
+      *options_->stereo_fusion, workspace_path, "COLMAP", "", input_type);
   fuser->AddCallback(Thread::FINISHED_CALLBACK, [this, fuser]() {
     fused_points_ = fuser->GetFusedPoints();
+    fused_points_visibility_ = fuser->GetFusedPointsVisibility();
     write_fused_points_action_->trigger();
   });
   thread_control_widget_->StartThread("Fusion...", true, fuser);
 }
 
-void DenseReconstructionWidget::Meshing() {
+void DenseReconstructionWidget::PoissonMeshing() {
   const std::string workspace_path = GetWorkspacePath();
   if (workspace_path.empty()) {
     return;
   }
 
   if (ExistsFile(JoinPaths(workspace_path, kFusedFileName))) {
-    thread_control_widget_->StartFunction("Meshing...", [this,
-                                                         workspace_path]() {
-      mvs::PoissonReconstruction(*options_->dense_meshing,
-                                 JoinPaths(workspace_path, kFusedFileName),
-                                 JoinPaths(workspace_path, kMeshedFileName));
-      show_meshing_info_action_->trigger();
-    });
+    thread_control_widget_->StartFunction(
+        "Poisson Meshing...", [this, workspace_path]() {
+          mvs::PoissonMeshing(
+              *options_->poisson_meshing,
+              JoinPaths(workspace_path, kFusedFileName),
+              JoinPaths(workspace_path, kPoissonMeshedFileName));
+          show_meshing_info_action_->trigger();
+        });
   }
+}
+
+void DenseReconstructionWidget::DelaunayMeshing() {
+#ifdef CGAL_ENABLED
+  const std::string workspace_path = GetWorkspacePath();
+  if (workspace_path.empty()) {
+    return;
+  }
+
+  if (ExistsFile(JoinPaths(workspace_path, kFusedFileName))) {
+    thread_control_widget_->StartFunction(
+        "Delaunay Meshing...", [this, workspace_path]() {
+          mvs::DenseDelaunayMeshing(
+              *options_->delaunay_meshing, workspace_path,
+              JoinPaths(workspace_path, kDelaunayMeshedFileName));
+          show_meshing_info_action_->trigger();
+        });
+  }
+#else
+  QMessageBox::critical(this, "",
+                        tr("Delaunay meshing requires CGAL, which "
+                           "is not available on your system."));
+#endif
 }
 
 void DenseReconstructionWidget::SelectWorkspacePath() {
@@ -375,7 +454,8 @@ void DenseReconstructionWidget::RefreshWorkspace() {
     undistortion_button_->setEnabled(false);
     stereo_button_->setEnabled(false);
     fusion_button_->setEnabled(false);
-    meshing_button_->setEnabled(false);
+    poisson_meshing_button_->setEnabled(false);
+    delaunay_meshing_button_->setEnabled(false);
     return;
   }
 
@@ -394,7 +474,8 @@ void DenseReconstructionWidget::RefreshWorkspace() {
   } else {
     stereo_button_->setEnabled(false);
     fusion_button_->setEnabled(false);
-    meshing_button_->setEnabled(false);
+    poisson_meshing_button_->setEnabled(false);
+    delaunay_meshing_button_->setEnabled(false);
     return;
   }
 
@@ -415,7 +496,7 @@ void DenseReconstructionWidget::RefreshWorkspace() {
             [this, image_name, image_path]() {
               image_viewer_widget_->setWindowTitle(
                   QString("Image for %1").arg(image_name.c_str()));
-              image_viewer_widget_->ReadAndShow(image_path, true);
+              image_viewer_widget_->ReadAndShow(image_path);
             });
     table_widget_->setCellWidget(i, 1, image_button);
 
@@ -432,7 +513,9 @@ void DenseReconstructionWidget::RefreshWorkspace() {
   table_widget_->resizeColumnsToContents();
 
   fusion_button_->setEnabled(photometric_done_ || geometric_done_);
-  meshing_button_->setEnabled(
+  poisson_meshing_button_->setEnabled(
+      ExistsFile(JoinPaths(workspace_path, kFusedFileName)));
+  delaunay_meshing_button_->setEnabled(
       ExistsFile(JoinPaths(workspace_path, kFusedFileName)));
 }
 
@@ -452,9 +535,8 @@ void DenseReconstructionWidget::WriteFusedPoints() {
 
     for (const auto& point : fused_points_) {
       const Eigen::Vector3d xyz(point.x, point.y, point.z);
-      const point3D_t point3D_id = reconstruction.AddPoint3D(xyz, Track());
-      const Eigen::Vector3ub rgb(point.r, point.g, point.b);
-      reconstruction.Point3D(point3D_id).SetColor(rgb);
+      reconstruction.AddPoint3D(xyz, Track(),
+                                Eigen::Vector3ub(point.r, point.g, point.b));
     }
 
     options_->render->min_track_len = 0;
@@ -468,16 +550,20 @@ void DenseReconstructionWidget::WriteFusedPoints() {
       workspace_path_text_->text().toUtf8().constData();
   if (workspace_path.empty()) {
     fused_points_ = {};
+    fused_points_visibility_ = {};
     return;
   }
 
-  thread_control_widget_->StartFunction(
-      "Exporting...", [this, workspace_path]() {
-        mvs::WritePlyBinary(JoinPaths(workspace_path, kFusedFileName),
-                            fused_points_);
-        fused_points_ = {};
-        meshing_button_->setEnabled(true);
-      });
+  thread_control_widget_->StartFunction("Exporting...", [this,
+                                                         workspace_path]() {
+    const std::string output_path = JoinPaths(workspace_path, kFusedFileName);
+    WriteBinaryPlyPoints(output_path, fused_points_);
+    mvs::WritePointsVisibility(output_path + ".vis", fused_points_visibility_);
+    fused_points_ = {};
+    fused_points_visibility_ = {};
+    poisson_meshing_button_->setEnabled(true);
+    delaunay_meshing_button_->setEnabled(true);
+  });
 }
 
 void DenseReconstructionWidget::ShowMeshingInfo() {
@@ -517,7 +603,7 @@ QWidget* DenseReconstructionWidget::GenerateTableButtonWidget(
               depth_map.Read(depth_map_path);
               image_viewer_widget_->setWindowTitle(
                   QString("Depth map for %1").arg(image_name.c_str()));
-              image_viewer_widget_->ShowBitmap(depth_map.ToBitmap(2, 98), true);
+              image_viewer_widget_->ShowBitmap(depth_map.ToBitmap(2, 98));
             });
   } else {
     depth_map_button->setEnabled(false);
@@ -537,7 +623,7 @@ QWidget* DenseReconstructionWidget::GenerateTableButtonWidget(
               normal_map.Read(normal_map_path);
               image_viewer_widget_->setWindowTitle(
                   QString("Normal map for %1").arg(image_name.c_str()));
-              image_viewer_widget_->ShowBitmap(normal_map.ToBitmap(), true);
+              image_viewer_widget_->ShowBitmap(normal_map.ToBitmap());
             });
   } else {
     normal_map_button->setEnabled(false);

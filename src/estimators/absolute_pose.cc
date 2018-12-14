@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "estimators/absolute_pose.h"
 
@@ -189,8 +204,8 @@ void EPNPEstimator::Residuals(const std::vector<X_t>& points2D,
 bool EPNPEstimator::ComputePose(const std::vector<Eigen::Vector2d>& points2D,
                                 const std::vector<Eigen::Vector3d>& points3D,
                                 Eigen::Matrix3x4d* proj_matrix) {
-  points2D_ = points2D;
-  points3D_ = points3D;
+  points2D_ = &points2D;
+  points3D_ = &points3D;
 
   ChooseControlPoints();
 
@@ -242,14 +257,14 @@ bool EPNPEstimator::ComputePose(const std::vector<Eigen::Vector2d>& points2D,
 void EPNPEstimator::ChooseControlPoints() {
   // Take C0 as the reference points centroid:
   cws_[0].setZero();
-  for (size_t i = 0; i < points3D_.size(); ++i) {
-    cws_[0] += points3D_[i];
+  for (size_t i = 0; i < points3D_->size(); ++i) {
+    cws_[0] += (*points3D_)[i];
   }
-  cws_[0] /= points3D_.size();
+  cws_[0] /= points3D_->size();
 
-  Eigen::Matrix<double, Eigen::Dynamic, 3> PW0(points3D_.size(), 3);
-  for (size_t i = 0; i < points3D_.size(); ++i) {
-    PW0.row(i) = points3D_[i] - cws_[0];
+  Eigen::Matrix<double, Eigen::Dynamic, 3> PW0(points3D_->size(), 3);
+  for (size_t i = 0; i < points3D_->size(); ++i) {
+    PW0.row(i) = (*points3D_)[i] - cws_[0];
   }
 
   const Eigen::Matrix3d PW0tPW0 = PW0.transpose() * PW0;
@@ -259,7 +274,7 @@ void EPNPEstimator::ChooseControlPoints() {
   const Eigen::Matrix3d Ut = svd.matrixU().transpose();
 
   for (int i = 1; i < 4; ++i) {
-    const double k = std::sqrt(D(i - 1) / points3D_.size());
+    const double k = std::sqrt(D(i - 1) / points3D_->size());
     cws_[i] = cws_[0] + k * Ut.row(i - 1).transpose();
   }
 }
@@ -278,12 +293,12 @@ bool EPNPEstimator::ComputeBarycentricCoordinates() {
 
   const Eigen::Matrix3d CC_inv = CC.inverse();
 
-  alphas_.resize(points2D_.size());
-  for (size_t i = 0; i < points3D_.size(); ++i) {
+  alphas_.resize(points2D_->size());
+  for (size_t i = 0; i < points3D_->size(); ++i) {
     for (int j = 0; j < 3; ++j) {
-      alphas_[i][1 + j] = CC_inv(j, 0) * (points3D_[i][0] - cws_[0][0]) +
-                          CC_inv(j, 1) * (points3D_[i][1] - cws_[0][1]) +
-                          CC_inv(j, 2) * (points3D_[i][2] - cws_[0][2]);
+      alphas_[i][1 + j] = CC_inv(j, 0) * ((*points3D_)[i][0] - cws_[0][0]) +
+                          CC_inv(j, 1) * ((*points3D_)[i][1] - cws_[0][1]) +
+                          CC_inv(j, 2) * ((*points3D_)[i][2] - cws_[0][2]);
     }
     alphas_[i][0] = 1.0 - alphas_[i][1] - alphas_[i][2] - alphas_[i][3];
   }
@@ -292,16 +307,16 @@ bool EPNPEstimator::ComputeBarycentricCoordinates() {
 }
 
 Eigen::Matrix<double, Eigen::Dynamic, 12> EPNPEstimator::ComputeM() {
-  Eigen::Matrix<double, Eigen::Dynamic, 12> M(2 * points2D_.size(), 12);
-  for (size_t i = 0; i < points3D_.size(); ++i) {
+  Eigen::Matrix<double, Eigen::Dynamic, 12> M(2 * points2D_->size(), 12);
+  for (size_t i = 0; i < points3D_->size(); ++i) {
     for (size_t j = 0; j < 4; ++j) {
       M(2 * i, 3 * j) = alphas_[i][j];
       M(2 * i, 3 * j + 1) = 0.0;
-      M(2 * i, 3 * j + 2) = -alphas_[i][j] * points2D_[i].x();
+      M(2 * i, 3 * j + 2) = -alphas_[i][j] * (*points2D_)[i].x();
 
       M(2 * i + 1, 3 * j) = 0.0;
       M(2 * i + 1, 3 * j + 1) = alphas_[i][j];
-      M(2 * i + 1, 3 * j + 2) = -alphas_[i][j] * points2D_[i].y();
+      M(2 * i + 1, 3 * j + 2) = -alphas_[i][j] * (*points2D_)[i].y();
     }
   }
   return M;
@@ -511,8 +526,8 @@ void EPNPEstimator::ComputeCcs(const Eigen::Vector4d& betas,
 }
 
 void EPNPEstimator::ComputePcs() {
-  pcs_.resize(points2D_.size());
-  for (size_t i = 0; i < points3D_.size(); ++i) {
+  pcs_.resize(points2D_->size());
+  for (size_t i = 0; i < points3D_->size(); ++i) {
     for (int j = 0; j < 3; ++j) {
       pcs_[i][j] = alphas_[i][0] * ccs_[0][j] + alphas_[i][1] * ccs_[1][j] +
                    alphas_[i][2] * ccs_[2][j] + alphas_[i][3] * ccs_[3][j];
@@ -525,7 +540,7 @@ void EPNPEstimator::SolveForSign() {
     for (int i = 0; i < 4; ++i) {
       ccs_[i] = -ccs_[i];
     }
-    for (size_t i = 0; i < points3D_.size(); ++i) {
+    for (size_t i = 0; i < points3D_->size(); ++i) {
       pcs_[i] = -pcs_[i];
     }
   }
@@ -535,19 +550,19 @@ void EPNPEstimator::EstimateRT(Eigen::Matrix3d* R, Eigen::Vector3d* t) {
   Eigen::Vector3d pc0 = Eigen::Vector3d::Zero();
   Eigen::Vector3d pw0 = Eigen::Vector3d::Zero();
 
-  for (size_t i = 0; i < points3D_.size(); ++i) {
+  for (size_t i = 0; i < points3D_->size(); ++i) {
     pc0 += pcs_[i];
-    pw0 += points3D_[i];
+    pw0 += (*points3D_)[i];
   }
-  pc0 /= points3D_.size();
-  pw0 /= points3D_.size();
+  pc0 /= points3D_->size();
+  pw0 /= points3D_->size();
 
   Eigen::Matrix3d abt = Eigen::Matrix3d::Zero();
-  for (size_t i = 0; i < points3D_.size(); ++i) {
+  for (size_t i = 0; i < points3D_->size(); ++i) {
     for (int j = 0; j < 3; ++j) {
-      abt(j, 0) += (pcs_[i][j] - pc0[j]) * (points3D_[i][0] - pw0[0]);
-      abt(j, 1) += (pcs_[i][j] - pc0[j]) * (points3D_[i][1] - pw0[1]);
-      abt(j, 2) += (pcs_[i][j] - pc0[j]) * (points3D_[i][2] - pw0[2]);
+      abt(j, 0) += (pcs_[i][j] - pc0[j]) * ((*points3D_)[i][0] - pw0[0]);
+      abt(j, 1) += (pcs_[i][j] - pc0[j]) * ((*points3D_)[i][1] - pw0[1]);
+      abt(j, 2) += (pcs_[i][j] - pc0[j]) * ((*points3D_)[i][2] - pw0[2]);
     }
   }
 
@@ -582,7 +597,7 @@ double EPNPEstimator::ComputeTotalReprojectionError(const Eigen::Matrix3d& R,
   proj_matrix.rightCols<1>() = t;
 
   std::vector<double> residuals;
-  ComputeSquaredReprojectionError(points2D_, points3D_, proj_matrix,
+  ComputeSquaredReprojectionError(*points2D_, *points3D_, proj_matrix,
                                   &residuals);
 
   double reproj_error = 0.0;

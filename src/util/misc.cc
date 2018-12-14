@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "util/misc.h"
 
@@ -99,6 +114,45 @@ std::string GetParentDir(const std::string& path) {
   return boost::filesystem::path(path).parent_path().string();
 }
 
+std::string GetRelativePath(const std::string& from, const std::string& to) {
+  // This implementation is adapted from:
+  // https://stackoverflow.com/questions/10167382
+  // A native implementation in boost::filesystem is only available starting
+  // from boost version 1.60.
+  using namespace boost::filesystem;
+  
+  path from_path = canonical(path(from));
+  path to_path = canonical(path(to));
+  
+  // Start at the root path and while they are the same then do nothing then
+  // when they first diverge take the entire from path, swap it with '..'
+  // segments, and then append the remainder of the to path.
+  path::const_iterator from_iter = from_path.begin();
+  path::const_iterator to_iter = to_path.begin();
+
+  // Loop through both while they are the same to find nearest common directory
+  while (from_iter != from_path.end() && to_iter != to_path.end() &&
+        (*to_iter) == (*from_iter)) {
+    ++ to_iter;
+    ++ from_iter;
+  }
+
+  // Replace from path segments with '..' (from => nearest common directory)
+  path rel_path;
+  while (from_iter != from_path.end()) {
+    rel_path /= "..";
+    ++ from_iter;
+  }
+
+  // Append the remainder of the to path (nearest common directory => to)
+  while (to_iter != to_path.end()) {
+    rel_path /= *to_iter;
+    ++ to_iter;
+  }
+
+  return rel_path.string();
+}
+
 std::vector<std::string> GetFileList(const std::string& path) {
   std::vector<std::string> file_list;
   for (auto it = boost::filesystem::directory_iterator(path);
@@ -174,7 +228,7 @@ std::vector<std::string> CSVToVector(const std::string& csv) {
     if (elem.empty()) {
       continue;
     }
-      values.push_back(elem);
+    values.push_back(elem);
   }
   return values;
 }
@@ -253,6 +307,18 @@ std::vector<std::string> ReadTextFileLines(const std::string& path) {
   }
 
   return lines;
+}
+
+void RemoveCommandLineArgument(const std::string& arg, int* argc, char** argv) {
+  for (int i = 0; i < *argc; ++i) {
+    if (argv[i] == arg) {
+      for (int j = i + 1; j < *argc; ++j) {
+        argv[i] = argv[j];
+      }
+      *argc -= 1;
+      break;
+    }
+  }
 }
 
 }  // namespace colmap

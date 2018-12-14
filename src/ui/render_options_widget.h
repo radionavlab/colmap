@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_UI_RENDER_OPTIONS_WIDGET_H_
 #define COLMAP_SRC_UI_RENDER_OPTIONS_WIDGET_H_
@@ -21,7 +36,7 @@
 #include <QtWidgets>
 
 #include "sfm/incremental_mapper.h"
-#include "ui/opengl_window.h"
+#include "ui/model_viewer_widget.h"
 #include "ui/options_widget.h"
 
 namespace colmap {
@@ -29,7 +44,7 @@ namespace colmap {
 class RenderOptionsWidget : public OptionsWidget {
  public:
   RenderOptionsWidget(QWidget* parent, OptionManager* options,
-                      OpenGLWindow* opengl_window);
+                      ModelViewerWidget* model_viewer_widget);
 
   size_t counter;
   bool automatic_update;
@@ -41,28 +56,42 @@ class RenderOptionsWidget : public OptionsWidget {
 
   void Apply();
   void ApplyProjection();
-  void ApplyColormap();
+  void ApplyPointColormap();
+  void ApplyImageColormap();
   void ApplyBackgroundColor();
 
-  void SelectBackgroundColor();
+  void SelectColor(const std::string& title, Eigen::Vector4f* color);
+  void SelectPointColormap(const int idx);
+  void SelectImageColormap(const int idx);
 
   void IncreasePointSize();
   void DecreasePointSize();
   void IncreaseCameraSize();
   void DecreaseCameraSize();
 
+  void ImageColormapNameFilterAddWord();
+  void ImageColormapNameFilterClearWords();
+
   OptionManager* options_;
-  OpenGLWindow* opengl_window_;
+  ModelViewerWidget* model_viewer_widget_;
+
+  Eigen::Vector4f background_color_;
 
   QComboBox* projection_cb_;
+
   QComboBox* point3D_colormap_cb_;
+
   double point3D_colormap_scale_;
   double point3D_colormap_min_q_;
   double point3D_colormap_max_q_;
-  QDoubleSpinBox* bg_red_spinbox_;
-  QDoubleSpinBox* bg_green_spinbox_;
-  QDoubleSpinBox* bg_blue_spinbox_;
-  double bg_color_[3];
+
+  QComboBox* image_colormap_cb_;
+  QPushButton* select_image_plane_color_;
+  QPushButton* select_image_frame_color_;
+  QHBoxLayout* image_colormap_name_filter_layout_;
+  Eigen::Vector4f image_plane_color_;
+  Eigen::Vector4f image_frame_color_;
+  ImageColormapNameFilter image_colormap_name_filter_;
 };
 
 }  // namespace colmap

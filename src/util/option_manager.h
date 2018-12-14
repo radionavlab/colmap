@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #ifndef COLMAP_SRC_UTIL_OPTION_MANAGER_H_
 #define COLMAP_SRC_UTIL_OPTION_MANAGER_H_
@@ -40,7 +55,8 @@ struct RenderOptions;
 namespace mvs {
 struct PatchMatchOptions;
 struct StereoFusionOptions;
-struct PoissonReconstructionOptions;
+struct PoissonMeshingOptions;
+struct DelaunayMeshingOptions;
 }  // namespace mvs
 
 class OptionManager {
@@ -48,9 +64,19 @@ class OptionManager {
   OptionManager();
 
   // Create "optimal" set of options for different reconstruction scenarios.
-  void InitForIndividualData();
-  void InitForVideoData();
-  void InitForInternetData();
+  // Note that the existing options are modified, so if your parameters are
+  // already low quality, they will be further modified.
+  void ModifyForIndividualData();
+  void ModifyForVideoData();
+  void ModifyForInternetData();
+
+  // Create "optimal" set of options for different quality settings.
+  // Note that the existing options are modified, so if your parameters are
+  // already low quality, they will be further degraded.
+  void ModifyForLowQuality();
+  void ModifyForMediumQuality();
+  void ModifyForHighQuality();
+  void ModifyForExtremeQuality();
 
   void AddAllOptions();
   void AddLogOptions();
@@ -65,9 +91,10 @@ class OptionManager {
   void AddTransitiveMatchingOptions();
   void AddBundleAdjustmentOptions();
   void AddMapperOptions();
-  void AddDenseStereoOptions();
-  void AddDenseFusionOptions();
-  void AddDenseMeshingOptions();
+  void AddPatchMatchStereoOptions();
+  void AddStereoFusionOptions();
+  void AddPoissonMeshingOptions();
+  void AddDelaunayMeshingOptions();
   void AddRenderOptions();
 
   template <typename T>
@@ -78,6 +105,8 @@ class OptionManager {
                         const std::string& help_text = "");
 
   void Reset();
+  void ResetOptions(const bool reset_paths);
+
   bool Check();
 
   void Parse(const int argc, char** argv);
@@ -102,9 +131,10 @@ class OptionManager {
   std::shared_ptr<BundleAdjustmentOptions> bundle_adjustment;
   std::shared_ptr<IncrementalMapperOptions> mapper;
 
-  std::shared_ptr<mvs::PatchMatchOptions> dense_stereo;
-  std::shared_ptr<mvs::StereoFusionOptions> dense_fusion;
-  std::shared_ptr<mvs::PoissonReconstructionOptions> dense_meshing;
+  std::shared_ptr<mvs::PatchMatchOptions> patch_match_stereo;
+  std::shared_ptr<mvs::StereoFusionOptions> stereo_fusion;
+  std::shared_ptr<mvs::PoissonMeshingOptions> poisson_meshing;
+  std::shared_ptr<mvs::DelaunayMeshingOptions> delaunay_meshing;
 
   std::shared_ptr<RenderOptions> render;
 
@@ -138,9 +168,10 @@ class OptionManager {
   bool added_transitive_match_options_;
   bool added_ba_options_;
   bool added_mapper_options_;
-  bool added_dense_stereo_options_;
-  bool added_dense_fusion_options_;
-  bool added_dense_meshing_options_;
+  bool added_patch_match_stereo_options_;
+  bool added_stereo_fusion_options_;
+  bool added_poisson_meshing_options_;
+  bool added_delaunay_meshing_options_;
   bool added_render_options_;
 };
 

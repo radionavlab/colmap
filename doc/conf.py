@@ -46,14 +46,14 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'COLMAP'
-copyright = u'2017, Johannes L. Schoenberger'
+copyright = u'2018, Johannes L. Schoenberger'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
 # The short X.Y version.
-version = '3.3'
+version = '3.6'
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -243,8 +243,8 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'COLMAP', u'COLMAP Documentation',
-   u'Johannes L. Schoenberger', 'COLMAP', 'Structure-from-Motion.',
-   'Miscellaneous'),
+   u'Johannes L. Schoenberger', 'COLMAP',
+   'Structure-from-Motion and Multi-View Stereo.', 'Miscellaneous'),
 ]
 
 # Documents to append as an appendix to all manuals.

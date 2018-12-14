@@ -3,9 +3,17 @@
 Installation
 ============
 
-You can either download one of the pre-built binaries from
-https://demuc.de/colmap/ or build the source code manually.
+You can either download one of the pre-built binaries or build the source code
+manually. Executables for Windows and Mac and other resources can be downloaded
+from https://demuc.de/colmap/. Executables for Linux/Unix/BSD are available at
+https://repology.org/metapackage/colmap/versions. Note that the COLMAP packages
+in the default repositories for Linux/Unix/BSD do not come with CUDA support,
+which requires manual compilation but is relatively easy on these platforms.
 
+COLMAP can be used as an independent application through the command-line or
+graphical user interface. Alternatively, COLMAP is also built as a reusable
+library, i.e., you can include and link COLMAP against your own source code,
+as described further below.
 
 ------------------
 Pre-built Binaries
@@ -16,20 +24,23 @@ Windows
 
 For convenience, the pre-built binaries for Windows contain both the graphical
 and command-line interface executables. To start the COLMAP GUI, you can simply
-run the ``COLMAP.bat`` batch script. The command-line executables are located in
-the ``bin`` folder and can be run from the Windows command shell ``cmd.exe``.
-Note that you must set the relative path to the pre-built libraries in the
-``lib`` directory accordingly using the command ``set PATH=%CD%\lib;%PATH%``.
-
+double-click  the ``COLMAP.bat`` batch script or alternatively run it from the
+Windows command shell or Powershell. The command-line interface is also
+accessible through this batch script, which automatically sets the necessary
+library paths. To list the available COLMAP commands, run ``COLMAP.bat -h`` in
+the command shell ``cmd.exe`` or in Powershell.
 
 Mac
 ---
 
-The pre-built binaries for Mac only contain the GUI version of COLMAP, since it
-is very easy to compile COLMAP on Mac. COLMAP is shipped as an unsigned
-application, i.e., you have to right-click the application and select *Open*
-and then accept to trust the application. In the future, you can then simply
-double-click the application to open COLMAP.
+The pre-built application package for Mac contains both the GUI and command-line
+version of COLMAP. To open the GUI, simply open the application and note that
+COLMAP is shipped as an unsigned application, i.e., when your first open the
+application, you have to right-click the application and select *Open* and then
+accept to trust the application. In the future, you can then simply double-click
+the application to open COLMAP. The command-line interface is accessible by
+running the packaged binary ``COLMAP.app/Contents/MacOS/colmap``. To list the
+available COLMAP commands, run ``COLMAP.app/Contents/MacOS/colmap -h``.
 
 
 -----------------
@@ -54,14 +65,20 @@ a (cluster) system if you do not have root access under Linux or Mac.
 Linux
 -----
 
-*Recommended dependencies:* CUDA.
+*Recommended dependencies:* CUDA (at least version 7.X)
 
-Dependencies from default Ubuntu 14.04/16.04 repositories::
+Dependencies from the default Ubuntu repositories::
 
     sudo apt-get install \
+        git \
         cmake \
         build-essential \
-        libboost-all-dev \
+        libboost-program-options-dev \
+        libboost-filesystem-dev \
+        libboost-graph-dev \
+        libboost-regex-dev \
+        libboost-system-dev \
+        libboost-test-dev \
         libeigen3-dev \
         libsuitesparse-dev \
         libfreeimage-dev \
@@ -69,13 +86,20 @@ Dependencies from default Ubuntu 14.04/16.04 repositories::
         libgflags-dev \
         libglew-dev \
         qtbase5-dev \
-        libqt5opengl5-dev
+        libqt5opengl5-dev \
+        libcgal-dev
+
+Under Ubuntu 16.04 the CMake configuration scripts of CGAL are broken and you
+must also install the CGAL Qt5 package::
+
+    sudo apt-get install libcgal-qt5-dev
 
 Install `Ceres Solver <http://ceres-solver.org/>`_::
 
     sudo apt-get install libatlas-base-dev libsuitesparse-dev
     git clone https://ceres-solver.googlesource.com/ceres-solver
     cd ceres-solver
+    git checkout $(git describe --tags) # Checkout the latest release
     mkdir build
     cd build
     cmake .. -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF
@@ -84,22 +108,36 @@ Install `Ceres Solver <http://ceres-solver.org/>`_::
 
 Configure and compile COLMAP::
 
-    cd path/to/colmap
+    git clone https://github.com/colmap/colmap.git
+    cd colmap
+    git checkout dev
     mkdir build
     cd build
     cmake ..
     make
+    sudo make install
+
+Under newer Ubuntu versions it might be necessary to explicitly select the used
+GCC version due to compatiblity issues with CUDA, which can be done as::
+
+    CC=/usr/bin/gcc-6 CXX=/usr/bin/g++-6 cmake ..
+
+Run COLMAP::
+
+    colmap -h
+    colmap gui
 
 
 Mac
 ---
 
-*Recommended dependencies:* CUDA.
+*Recommended dependencies:* CUDA (at least version 7.X)
 
 Dependencies from `Homebrew <http://brew.sh/>`_::
 
     brew tap homebrew/science
     brew install \
+        git \
         cmake \
         boost \
         eigen \
@@ -108,37 +146,37 @@ Dependencies from `Homebrew <http://brew.sh/>`_::
         gflags \
         suite-sparse \
         ceres-solver \
-        qt5 \
-        glew
-
-Create the file ``LocalConfig.cmake`` in the COLMAP base directory and then
-insert the following lines into it::
-
-    set(Qt5_CMAKE_DIR "/usr/local/opt/qt5/lib/cmake")
-    set(Qt5Core_DIR ${Qt5_CMAKE_DIR}/Qt5Core)
-    set(Qt5OpenGL_DIR ${Qt5_CMAKE_DIR}/Qt5OpenGL)
+        qt \
+        glew \
+        cgal
 
 Configure and compile COLMAP::
 
-    cd path/to/colmap
+    git clone https://github.com/colmap/colmap.git
+    cd colmap
+    git checkout dev
     mkdir build
     cd build
-    cmake ..
+    cmake .. -DQt5_DIR=/usr/local/opt/qt/lib/cmake/Qt5
     make
+    sudo make install
+
+Run COLMAP::
+
+    colmap -h
+    colmap gui
 
 
 Windows
 -------
 
-*Recommended dependencies:* CUDA.
+*Recommended dependencies:* CUDA (at least version 7.X), CGAL
 
 On Windows it is recommended to use the Python build script. Please follow the
 instructions in the next section.
 
-Alternatively, you can install the dependencies manually. To make the process of
-configuring CMake less painful, please have a look at
-``LocalConfigExample.config``. MSVC12 (Microsoft Visual Studio 2013) and newer
-are confirmed to compile COLMAP without any issues.
+Alternatively, you can install the dependencies manually. Microsoft Visual
+Studio 2013 and newer are confirmed to compile COLMAP without any issues.
 
 
 Build Script
@@ -150,23 +188,86 @@ under Mac and Linux, it is usually easier and faster to use the available
 package managers for the dependencies (see above). However, if you are on a
 (cluster) system without root access, this script might be useful. This script
 downloads the necessary dependencies automatically from the Internet. It assumes
-that CMake, Boost, Qt5, and CUDA (optional) are already installed on the system.
-E.g., under Windows you must specify the location of these libraries as
-follows::
+that CMake, Boost, Qt5, CUDA (optional), and CGAL (optional) are already
+installed on the system. E.g., under Windows you must specify the location of
+these libraries similar to this::
 
     python scripts/python/build.py \
-        --path path/to/colmap/install \
-        --boost_path C:\local\boost_1_64_0\lib64-msvc-14.0 \
-        --qt_path C:\Qt\5.9.1\msvc2015_64 \
-        --cuda_path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA/v8.0"
+        --build_path path/to/colmap/build \
+        --colmap_path path/to/colmap \
+        --boost_path "C:/local/boost_1_64_0/lib64-msvc-14.0" \
+        --qt_path "C:/Qt/5.9.3/msvc2015_64" \
+        --cuda_path "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v8.0" \
+        --cgal_path "C:/dev/CGAL-4.11.2/build"
 
+Note that under Windows you must use forward slashes for specifying the paths
+here. If you want to compile COLMAP using a specific Visual Studio version, you
+can for example specify ``--cmake_generator "Visual Studio 14"`` for Visual
+Studio 2015. If you want to open the COLMAP source code in Visual Studio, you
+can open the solution file in ``path/to/colmap/build/colmap/build``.
 If you use Homebrew under Mac, you can use the following command::
 
     python scripts/python/build.py \
-        --path path/to/colmap/install \
-        --qt5_path /usr/local/opt/qt/
+        --build_path path/to/colmap/build \
+        --colmap_path path/to/colmap \
+        --qt_path /usr/local/opt/qt
 
 To see the full list of command-line options, pass the ``--help`` argument.
+
+
+.. _installation-library:
+
+-------
+Library
+-------
+
+If you want to include and link COLMAP against your own library, the easiest
+way is to use CMake as a build configuration tool. COLMAP automatically installs
+all headers to ``${CMAKE_INSTALL_PREFIX}/include/colmap``, all libraries to
+``${CMAKE_INSTALL_PREFIX}/lib/colmap``, and the CMake configuration to
+``${CMAKE_INSTALL_PREFIX}/share/colmap``.
+
+For example, compiling your own source code against COLMAP is as simple as
+using the following ``CMakeLists.txt``::
+
+    cmake_minimum_required(VERSION 2.8.11)
+
+    project(TestProject)
+
+    find_package(COLMAP REQUIRED)
+    # or to require a specific version: find_package(COLMAP 3.4 REQUIRED)
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
+    include_directories(${COLMAP_INCLUDE_DIRS})
+    link_directories(${COLMAP_LINK_DIRS})
+
+    add_executable(hello_world hello_world.cc)
+    target_link_libraries(hello_world ${COLMAP_LIBRARIES})
+
+with the source code ``hello_world.cc``::
+
+    #include <cstdlib>
+    #include <iostream>
+
+    #include <colmap/util/option_manager.h>
+    #include <colmap/util/string.h>
+
+    int main(int argc, char** argv) {
+        colmap::InitializeGlog(argv);
+
+        std::string input_path;
+        std::string output_path;
+
+        colmap::OptionManager options;
+        options.AddRequiredOption("input_path", &input_path);
+        options.AddRequiredOption("output_path", &output_path);
+        options.Parse(argc, argv);
+
+        std::cout << colmap::StringPrintf("Hello %s!", "COLMAP") << std::endl;
+
+        return EXIT_SUCCESS;
+    }
 
 
 -------------

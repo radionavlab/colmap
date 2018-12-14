@@ -1,26 +1,41 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "feature/matching.h"
 
 #include <fstream>
 #include <numeric>
 
+#include "SiftGPU/SiftGPU.h"
 #include "base/gps.h"
-#include "ext/SiftGPU/SiftGPU.h"
 #include "feature/utils.h"
 #include "retrieval/visual_index.h"
 #include "util/cuda.h"
@@ -33,12 +48,14 @@ void PrintElapsedTime(const Timer& timer) {
   std::cout << StringPrintf(" in %.3fs", timer.ElapsedSeconds()) << std::endl;
 }
 
-void IndexImagesInVisualIndex(const int num_threads, const int max_num_features,
+void IndexImagesInVisualIndex(const int num_threads, const int num_checks,
+                              const int max_num_features,
                               const std::vector<image_t>& image_ids,
                               Thread* thread, FeatureMatcherCache* cache,
                               retrieval::VisualIndex<>* visual_index) {
   retrieval::VisualIndex<>::IndexOptions index_options;
   index_options.num_threads = num_threads;
+  index_options.num_checks = num_checks;
 
   for (size_t i = 0; i < image_ids.size(); ++i) {
     if (thread->IsStopped()) {
@@ -67,7 +84,8 @@ void IndexImagesInVisualIndex(const int num_threads, const int max_num_features,
 }
 
 void MatchNearestNeighborsInVisualIndex(
-    const int num_threads, const int num_images, const int num_verifications,
+    const int num_threads, const int num_images, const int num_neighbors,
+    const int num_checks, const int num_images_after_verification,
     const int max_num_features, const std::vector<image_t>& image_ids,
     Thread* thread, FeatureMatcherCache* cache,
     retrieval::VisualIndex<>* visual_index, SiftFeatureMatcher* matcher) {
@@ -85,7 +103,9 @@ void MatchNearestNeighborsInVisualIndex(
   // access to the database causing race conditions.
   retrieval::VisualIndex<>::QueryOptions query_options;
   query_options.max_num_images = num_images;
-  query_options.max_num_verifications = num_verifications;
+  query_options.num_neighbors = num_neighbors;
+  query_options.num_checks = num_checks;
+  query_options.num_images_after_verification = num_images_after_verification;
   auto QueryFunc = [&](const image_t image_id) {
     auto keypoints = cache->GetKeypoints(image_id);
     auto descriptors = cache->GetDescriptors(image_id);
@@ -95,8 +115,8 @@ void MatchNearestNeighborsInVisualIndex(
 
     Retrieval retrieval;
     retrieval.image_id = image_id;
-    visual_index->QueryWithVerification(query_options, keypoints, descriptors,
-                                        &retrieval.image_scores);
+    visual_index->Query(query_options, keypoints, descriptors,
+                        &retrieval.image_scores);
 
     CHECK(retrieval_queue.Push(retrieval));
   };
@@ -161,13 +181,15 @@ bool SequentialMatchingOptions::Check() const {
   CHECK_OPTION_GT(overlap, 0);
   CHECK_OPTION_GT(loop_detection_period, 0);
   CHECK_OPTION_GT(loop_detection_num_images, 0);
-  CHECK_OPTION_GE(loop_detection_num_verifications, 0);
+  CHECK_OPTION_GT(loop_detection_num_nearest_neighbors, 0);
+  CHECK_OPTION_GT(loop_detection_num_checks, 0);
   return true;
 }
 
 bool VocabTreeMatchingOptions::Check() const {
   CHECK_OPTION_GT(num_images, 0);
-  CHECK_OPTION_GE(num_verifications, 0);
+  CHECK_OPTION_GT(num_nearest_neighbors, 0);
+  CHECK_OPTION_GT(num_checks, 0);
   return true;
 }
 
@@ -274,11 +296,11 @@ void FeatureMatcherCache::WriteMatches(const image_t image_id1,
   database_->WriteMatches(image_id1, image_id2, matches);
 }
 
-void FeatureMatcherCache::WriteInlierMatches(
+void FeatureMatcherCache::WriteTwoViewGeometry(
     const image_t image_id1, const image_t image_id2,
     const TwoViewGeometry& two_view_geometry) {
   std::unique_lock<std::mutex> lock(database_mutex_);
-  database_->WriteInlierMatches(image_id1, image_id2, two_view_geometry);
+  database_->WriteTwoViewGeometry(image_id1, image_id2, two_view_geometry);
 }
 
 void FeatureMatcherCache::DeleteMatches(const image_t image_id1,
@@ -535,6 +557,8 @@ TwoViewGeometryVerifier::TwoViewGeometryVerifier(
       static_cast<size_t>(options_.min_num_inliers);
   two_view_geometry_options_.ransac_options.max_error = options_.max_error;
   two_view_geometry_options_.ransac_options.confidence = options_.confidence;
+  two_view_geometry_options_.ransac_options.min_num_trials =
+      static_cast<size_t>(options_.min_num_trials);
   two_view_geometry_options_.ransac_options.max_num_trials =
       static_cast<size_t>(options_.max_num_trials);
   two_view_geometry_options_.ransac_options.min_inlier_ratio =
@@ -593,7 +617,7 @@ SiftFeatureMatcher::SiftFeatureMatcher(const SiftMatchingOptions& options,
   CHECK_GT(gpu_indices.size(), 0);
 
 #ifdef CUDA_ENABLED
-  if (gpu_indices.size() == 1 && gpu_indices[0] == -1) {
+  if (options_.use_gpu && gpu_indices.size() == 1 && gpu_indices[0] == -1) {
     const int num_cuda_devices = GetNumCudaDevices();
     CHECK_GT(num_cuda_devices, 0);
     gpu_indices.resize(num_cuda_devices);
@@ -806,8 +830,8 @@ void SiftFeatureMatcher::Match(
     }
 
     cache_->WriteMatches(output.image_id1, output.image_id2, output.matches);
-    cache_->WriteInlierMatches(output.image_id1, output.image_id2,
-                               output.two_view_geometry);
+    cache_->WriteTwoViewGeometry(output.image_id1, output.image_id2,
+                                 output.two_view_geometry);
   }
 
   CHECK_EQ(output_queue_.Size(), 0);
@@ -994,6 +1018,7 @@ void SequentialFeatureMatcher::RunLoopDetection(
 
   // Index all images in the visual index.
   IndexImagesInVisualIndex(match_options_.num_threads,
+                           options_.loop_detection_num_checks,
                            options_.loop_detection_max_num_features, image_ids,
                            this, &cache_, &visual_index);
 
@@ -1010,7 +1035,9 @@ void SequentialFeatureMatcher::RunLoopDetection(
 
   MatchNearestNeighborsInVisualIndex(
       match_options_.num_threads, options_.loop_detection_num_images,
-      options_.loop_detection_num_verifications,
+      options_.loop_detection_num_nearest_neighbors,
+      options_.loop_detection_num_checks,
+      options_.loop_detection_num_images_after_verification,
       options_.loop_detection_max_num_features, match_image_ids, this, &cache_,
       &visual_index, &matcher_);
 }
@@ -1073,7 +1100,7 @@ void VocabTreeFeatureMatcher::Run() {
   }
 
   // Index all images in the visual index.
-  IndexImagesInVisualIndex(match_options_.num_threads,
+  IndexImagesInVisualIndex(match_options_.num_threads, options_.num_checks,
                            options_.max_num_features, all_image_ids, this,
                            &cache_, &visual_index);
 
@@ -1085,8 +1112,9 @@ void VocabTreeFeatureMatcher::Run() {
   // Match all images in the visual index.
   MatchNearestNeighborsInVisualIndex(
       match_options_.num_threads, options_.num_images,
-      options_.num_verifications, options_.max_num_features, image_ids, this,
-      &cache_, &visual_index, &matcher_);
+      options_.num_nearest_neighbors, options_.num_checks,
+      options_.num_images_after_verification, options_.max_num_features,
+      image_ids, this, &cache_, &visual_index, &matcher_);
 
   GetTimer().PrintMinutes();
 }
@@ -1316,8 +1344,8 @@ void TransitiveFeatureMatcher::Run() {
 
     std::vector<std::pair<image_t, image_t>> existing_image_pairs;
     std::vector<int> existing_num_inliers;
-    database_.ReadInlierMatchesGraph(&existing_image_pairs,
-                                     &existing_num_inliers);
+    database_.ReadTwoViewGeometryNumInliers(&existing_image_pairs,
+                                            &existing_num_inliers);
 
     CHECK_EQ(existing_image_pairs.size(), existing_num_inliers.size());
 
@@ -1595,6 +1623,8 @@ void FeaturePairsFeatureMatcher::Run() {
           match_options_.max_error;
       two_view_geometry_options.ransac_options.confidence =
           match_options_.confidence;
+      two_view_geometry_options.ransac_options.min_num_trials =
+          static_cast<size_t>(match_options_.min_num_trials);
       two_view_geometry_options.ransac_options.max_num_trials =
           static_cast<size_t>(match_options_.max_num_trials);
       two_view_geometry_options.ransac_options.min_inlier_ratio =
@@ -1605,8 +1635,8 @@ void FeaturePairsFeatureMatcher::Run() {
           FeatureKeypointsToPointsVector(keypoints2), matches,
           two_view_geometry_options);
 
-      database_.WriteInlierMatches(image1.ImageId(), image2.ImageId(),
-                                   two_view_geometry);
+      database_.WriteTwoViewGeometry(image1.ImageId(), image2.ImageId(),
+                                     two_view_geometry);
     } else {
       TwoViewGeometry two_view_geometry;
 
@@ -1618,8 +1648,8 @@ void FeaturePairsFeatureMatcher::Run() {
 
       two_view_geometry.inlier_matches = matches;
 
-      database_.WriteInlierMatches(image1.ImageId(), image2.ImageId(),
-                                   two_view_geometry);
+      database_.WriteTwoViewGeometry(image1.ImageId(), image2.ImageId(),
+                                     two_view_geometry);
     }
   }
 

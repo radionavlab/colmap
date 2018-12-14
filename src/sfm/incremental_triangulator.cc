@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "sfm/incremental_triangulator.h"
 
@@ -37,9 +52,11 @@ bool IncrementalTriangulator::Options::Check() const {
   return true;
 }
 
-IncrementalTriangulator::IncrementalTriangulator(const SceneGraph* scene_graph,
-                                                 Reconstruction* reconstruction)
-    : scene_graph_(scene_graph), reconstruction_(reconstruction) {}
+IncrementalTriangulator::IncrementalTriangulator(
+    const CorrespondenceGraph* correspondence_graph,
+    Reconstruction* reconstruction)
+    : correspondence_graph_(correspondence_graph),
+      reconstruction_(reconstruction) {}
 
 size_t IncrementalTriangulator::TriangulateImage(const Options& options,
                                                  const image_t image_id) {
@@ -66,7 +83,6 @@ size_t IncrementalTriangulator::TriangulateImage(const Options& options,
   ref_corr_data.image_id = image_id;
   ref_corr_data.image = &image;
   ref_corr_data.camera = &camera;
-  ref_corr_data.proj_matrix = image.ProjectionMatrix();
 
   // Container for correspondences from reference observation to other images.
   std::vector<CorrData> corrs_data;
@@ -135,7 +151,6 @@ size_t IncrementalTriangulator::CompleteImage(const Options& options,
   ref_corr_data.image_id = image_id;
   ref_corr_data.image = &image;
   ref_corr_data.camera = &camera;
-  ref_corr_data.proj_matrix = image.ProjectionMatrix();
 
   // Container for correspondences from reference observation to other images.
   std::vector<CorrData> corrs_data;
@@ -150,7 +165,7 @@ size_t IncrementalTriangulator::CompleteImage(const Options& options,
     }
 
     if (options.ignore_two_view_tracks &&
-        scene_graph_->IsTwoViewObservation(image_id, point2D_idx)) {
+        correspondence_graph_->IsTwoViewObservation(image_id, point2D_idx)) {
       continue;
     }
 
@@ -313,10 +328,6 @@ size_t IncrementalTriangulator::Retriangulate(const Options& options) {
     }
     num_re_trials += 1;
 
-    // Extract camera poses.
-    const Eigen::Matrix3x4d proj_matrix1 = image1.ProjectionMatrix();
-    const Eigen::Matrix3x4d proj_matrix2 = image2.ProjectionMatrix();
-
     const Camera& camera1 = reconstruction_->Camera(image1.CameraId());
     const Camera& camera2 = reconstruction_->Camera(image2.CameraId());
     if (HasCameraBogusParams(options, camera1) ||
@@ -326,12 +337,13 @@ size_t IncrementalTriangulator::Retriangulate(const Options& options) {
 
     // Find correspondences and perform retriangulation.
 
-    const std::vector<std::pair<point2D_t, point2D_t>> corrs =
-        scene_graph_->FindCorrespondencesBetweenImages(image_id1, image_id2);
+    const FeatureMatches& corrs =
+        correspondence_graph_->FindCorrespondencesBetweenImages(image_id1,
+                                                                image_id2);
 
     for (const auto& corr : corrs) {
-      const Point2D& point2D1 = image1.Point2D(corr.first);
-      const Point2D& point2D2 = image2.Point2D(corr.second);
+      const Point2D& point2D1 = image1.Point2D(corr.point2D_idx1);
+      const Point2D& point2D2 = image2.Point2D(corr.point2D_idx2);
 
       // Two cases are possible here: both points belong to the same 3D point
       // or to different 3D points. In the former case, there is nothing
@@ -344,19 +356,17 @@ size_t IncrementalTriangulator::Retriangulate(const Options& options) {
 
       CorrData corr_data1;
       corr_data1.image_id = image_id1;
-      corr_data1.point2D_idx = corr.first;
+      corr_data1.point2D_idx = corr.point2D_idx1;
       corr_data1.image = &image1;
       corr_data1.camera = &camera1;
       corr_data1.point2D = &point2D1;
-      corr_data1.proj_matrix = proj_matrix1;
 
       CorrData corr_data2;
       corr_data2.image_id = image_id2;
-      corr_data2.point2D_idx = corr.second;
+      corr_data2.point2D_idx = corr.point2D_idx2;
       corr_data2.image = &image2;
       corr_data2.camera = &camera2;
       corr_data2.point2D = &point2D2;
-      corr_data2.proj_matrix = proj_matrix2;
 
       if (point2D1.HasPoint3D() && !point2D2.HasPoint3D()) {
         const std::vector<CorrData> corrs_data1 = {corr_data1};
@@ -406,16 +416,16 @@ size_t IncrementalTriangulator::Find(const Options& options,
                                      const point2D_t point2D_idx,
                                      const size_t transitivity,
                                      std::vector<CorrData>* corrs_data) {
-  const std::vector<SceneGraph::Correspondence>& corrs =
-      scene_graph_->FindTransitiveCorrespondences(image_id, point2D_idx,
-                                                  transitivity);
+  const std::vector<CorrespondenceGraph::Correspondence>& corrs =
+      correspondence_graph_->FindTransitiveCorrespondences(
+          image_id, point2D_idx, transitivity);
 
   corrs_data->clear();
   corrs_data->reserve(corrs.size());
 
   size_t num_triangulated = 0;
 
-  for (const SceneGraph::Correspondence corr : corrs) {
+  for (const CorrespondenceGraph::Correspondence corr : corrs) {
     const Image& corr_image = reconstruction_->Image(corr.image_id);
     if (!corr_image.IsRegistered()) {
       continue;
@@ -432,7 +442,6 @@ size_t IncrementalTriangulator::Find(const Options& options,
     corr_data.image = &corr_image;
     corr_data.camera = &corr_camera;
     corr_data.point2D = &corr_image.Point2D(corr.point2D_idx);
-    corr_data.proj_matrix = corr_image.ProjectionMatrix();
 
     corrs_data->push_back(corr_data);
 
@@ -460,8 +469,8 @@ size_t IncrementalTriangulator::Create(
     return 0;
   } else if (options.ignore_two_view_tracks && create_corrs_data.size() == 2) {
     const CorrData& corr_data1 = create_corrs_data[0];
-    if (scene_graph_->IsTwoViewObservation(corr_data1.image_id,
-                                           corr_data1.point2D_idx)) {
+    if (correspondence_graph_->IsTwoViewObservation(corr_data1.image_id,
+                                                    corr_data1.point2D_idx)) {
       return 0;
     }
   }
@@ -548,13 +557,9 @@ size_t IncrementalTriangulator::Continue(
     const Point3D& point3D =
         reconstruction_->Point3D(corr_data.point2D->Point3DId());
 
-    if (!HasPointPositiveDepth(ref_corr_data.proj_matrix, point3D.XYZ())) {
-      continue;
-    }
-
-    const double angle_error =
-        CalculateAngularError(ref_corr_data.point2D->XY(), point3D.XYZ(),
-                              ref_corr_data.proj_matrix, *ref_corr_data.camera);
+    const double angle_error = CalculateAngularError(
+        ref_corr_data.point2D->XY(), point3D.XYZ(), ref_corr_data.image->Qvec(),
+        ref_corr_data.image->Tvec(), *ref_corr_data.camera);
     if (angle_error < best_angle_error) {
       best_angle_error = angle_error;
       best_idx = idx;
@@ -581,12 +586,15 @@ size_t IncrementalTriangulator::Merge(const Options& options,
     return 0;
   }
 
+  const double max_squared_reproj_error =
+      options.merge_max_reproj_error * options.merge_max_reproj_error;
+
   const auto& point3D = reconstruction_->Point3D(point3D_id);
 
   for (const auto& track_el : point3D.Track().Elements()) {
-    const std::vector<SceneGraph::Correspondence>& corrs =
-        scene_graph_->FindCorrespondences(track_el.image_id,
-                                          track_el.point2D_idx);
+    const std::vector<CorrespondenceGraph::Correspondence>& corrs =
+        correspondence_graph_->FindCorrespondences(track_el.image_id,
+                                                   track_el.point2D_idx);
 
     for (const auto corr : corrs) {
       const auto& image = reconstruction_->Image(corr.image_id);
@@ -625,14 +633,9 @@ size_t IncrementalTriangulator::Merge(const Options& options,
               reconstruction_->Camera(test_image.CameraId());
           const Point2D& test_point2D =
               test_image.Point2D(test_track_el.point2D_idx);
-
-          const Eigen::Matrix3x4d test_proj_matrix =
-              test_image.ProjectionMatrix();
-
-          if (!HasPointPositiveDepth(test_proj_matrix, merged_xyz) ||
-              CalculateReprojectionError(test_point2D.XY(), merged_xyz,
-                                         test_proj_matrix, test_camera) >
-                  options.merge_max_reproj_error) {
+          if (CalculateSquaredReprojectionError(
+                  test_point2D.XY(), merged_xyz, test_image.Qvec(),
+                  test_image.Tvec(), test_camera) > max_squared_reproj_error) {
             merge_success = false;
             break;
           }
@@ -676,6 +679,9 @@ size_t IncrementalTriangulator::Complete(const Options& options,
     return num_completed;
   }
 
+  const double max_squared_reproj_error =
+      options.complete_max_reproj_error * options.complete_max_reproj_error;
+
   const Point3D& point3D = reconstruction_->Point3D(point3D_id);
 
   std::vector<TrackElement> queue = point3D.Track().Elements();
@@ -690,9 +696,9 @@ size_t IncrementalTriangulator::Complete(const Options& options,
     queue.clear();
 
     for (const TrackElement queue_elem : prev_queue) {
-      const std::vector<SceneGraph::Correspondence>& corrs =
-          scene_graph_->FindCorrespondences(queue_elem.image_id,
-                                            queue_elem.point2D_idx);
+      const std::vector<CorrespondenceGraph::Correspondence>& corrs =
+          correspondence_graph_->FindCorrespondences(queue_elem.image_id,
+                                                     queue_elem.point2D_idx);
 
       for (const auto corr : corrs) {
         const Image& image = reconstruction_->Image(corr.image_id);
@@ -705,19 +711,14 @@ size_t IncrementalTriangulator::Complete(const Options& options,
           continue;
         }
 
-        const Eigen::Matrix3x4d proj_matrix = image.ProjectionMatrix();
-        if (!HasPointPositiveDepth(proj_matrix, point3D.XYZ())) {
-          continue;
-        }
-
         const Camera& camera = reconstruction_->Camera(image.CameraId());
         if (HasCameraBogusParams(options, camera)) {
           continue;
         }
 
-        const double reproj_error = CalculateReprojectionError(
-            point2D.XY(), point3D.XYZ(), proj_matrix, camera);
-        if (reproj_error > options.complete_max_reproj_error) {
+        if (CalculateSquaredReprojectionError(
+                point2D.XY(), point3D.XYZ(), image.Qvec(), image.Tvec(),
+                camera) > max_squared_reproj_error) {
           continue;
         }
 

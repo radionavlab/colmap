@@ -1,18 +1,33 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "util/option_manager.h"
 
@@ -51,9 +66,10 @@ OptionManager::OptionManager() {
   transitive_matching.reset(new TransitiveMatchingOptions());
   bundle_adjustment.reset(new BundleAdjustmentOptions());
   mapper.reset(new IncrementalMapperOptions());
-  dense_stereo.reset(new mvs::PatchMatchOptions());
-  dense_fusion.reset(new mvs::StereoFusionOptions());
-  dense_meshing.reset(new mvs::PoissonReconstructionOptions());
+  patch_match_stereo.reset(new mvs::PatchMatchOptions());
+  stereo_fusion.reset(new mvs::StereoFusionOptions());
+  poisson_meshing.reset(new mvs::PoissonMeshingOptions());
+  delaunay_meshing.reset(new mvs::DelaunayMeshingOptions());
   render.reset(new RenderOptions());
 
   Reset();
@@ -62,19 +78,86 @@ OptionManager::OptionManager() {
   desc_->add_options()("project_path", config::value<std::string>());
 }
 
-void OptionManager::InitForIndividualData() {
+void OptionManager::ModifyForIndividualData() {
+  mapper->min_focal_length_ratio = 0.1;
+  mapper->max_focal_length_ratio = 10;
   mapper->max_extra_param = std::numeric_limits<double>::max();
 }
 
-void OptionManager::InitForVideoData() {
+void OptionManager::ModifyForVideoData() {
+  const bool kResetPaths = false;
+  ResetOptions(kResetPaths);
   mapper->mapper.init_min_tri_angle /= 2;
   mapper->ba_global_images_ratio = 1.4;
   mapper->ba_global_points_ratio = 1.4;
+  mapper->min_focal_length_ratio = 0.1;
+  mapper->max_focal_length_ratio = 10;
   mapper->max_extra_param = std::numeric_limits<double>::max();
-  dense_fusion->min_num_pixels = 15;
+  stereo_fusion->min_num_pixels = 15;
 }
 
-void OptionManager::InitForInternetData() { dense_fusion->min_num_pixels = 10; }
+void OptionManager::ModifyForInternetData() {
+  stereo_fusion->min_num_pixels = 10;
+}
+
+void OptionManager::ModifyForLowQuality() {
+  sift_extraction->max_image_size = 1000;
+  sequential_matching->loop_detection_num_images /= 2;
+  vocab_tree_matching->num_images /= 2;
+  mapper->ba_local_max_num_iterations /= 2;
+  mapper->ba_global_max_num_iterations /= 2;
+  mapper->ba_global_images_ratio *= 1.2;
+  mapper->ba_global_points_ratio *= 1.2;
+  mapper->ba_global_max_refinements = 2;
+  patch_match_stereo->max_image_size = 1000;
+  patch_match_stereo->window_radius = 4;
+  patch_match_stereo->window_step = 2;
+  patch_match_stereo->num_samples /= 2;
+  patch_match_stereo->num_iterations = 3;
+  patch_match_stereo->geom_consistency = false;
+  stereo_fusion->check_num_images /= 2;
+  stereo_fusion->max_image_size = 1000;
+}
+
+void OptionManager::ModifyForMediumQuality() {
+  sift_extraction->max_image_size = 1600;
+  sequential_matching->loop_detection_num_images /= 1.5;
+  vocab_tree_matching->num_images /= 1.5;
+  mapper->ba_local_max_num_iterations /= 1.5;
+  mapper->ba_global_max_num_iterations /= 1.5;
+  mapper->ba_global_images_ratio *= 1.1;
+  mapper->ba_global_points_ratio *= 1.1;
+  mapper->ba_global_max_refinements = 2;
+  patch_match_stereo->max_image_size = 1600;
+  patch_match_stereo->window_radius = 4;
+  patch_match_stereo->window_step = 2;
+  patch_match_stereo->num_samples /= 1.5;
+  patch_match_stereo->num_iterations = 5;
+  patch_match_stereo->geom_consistency = false;
+  stereo_fusion->check_num_images /= 1.5;
+  stereo_fusion->max_image_size = 1600;
+}
+
+void OptionManager::ModifyForHighQuality() {
+  sift_extraction->estimate_affine_shape = true;
+  sift_extraction->max_image_size = 2400;
+  sift_matching->guided_matching = true;
+  mapper->ba_local_max_num_iterations = 30;
+  mapper->ba_local_max_refinements = 3;
+  mapper->ba_global_max_num_iterations = 75;
+  patch_match_stereo->max_image_size = 2400;
+  stereo_fusion->max_image_size = 2400;
+}
+
+void OptionManager::ModifyForExtremeQuality() {
+  // Most of the options are set to extreme quality by default.
+  sift_extraction->estimate_affine_shape = true;
+  sift_extraction->domain_size_pooling = true;
+  sift_matching->guided_matching = true;
+  mapper->ba_local_max_num_iterations = 40;
+  mapper->ba_local_max_refinements = 3;
+  mapper->ba_global_max_num_iterations = 100;
+}
 
 void OptionManager::AddAllOptions() {
   AddLogOptions();
@@ -89,9 +172,10 @@ void OptionManager::AddAllOptions() {
   AddTransitiveMatchingOptions();
   AddBundleAdjustmentOptions();
   AddMapperOptions();
-  AddDenseStereoOptions();
-  AddDenseFusionOptions();
-  AddDenseMeshingOptions();
+  AddPatchMatchStereoOptions();
+  AddStereoFusionOptions();
+  AddPoissonMeshingOptions();
+  AddDelaunayMeshingOptions();
   AddRenderOptions();
 }
 
@@ -129,14 +213,22 @@ void OptionManager::AddExtractionOptions() {
   }
   added_extraction_options_ = true;
 
+  AddAndRegisterDefaultOption("ImageReader.mask_path",
+                              &image_reader->mask_path);
   AddAndRegisterDefaultOption("ImageReader.camera_model",
                               &image_reader->camera_model);
   AddAndRegisterDefaultOption("ImageReader.single_camera",
                               &image_reader->single_camera);
+  AddAndRegisterDefaultOption("ImageReader.single_camera_per_folder",
+                              &image_reader->single_camera_per_folder);
+  AddAndRegisterDefaultOption("ImageReader.existing_camera_id",
+                              &image_reader->existing_camera_id);
   AddAndRegisterDefaultOption("ImageReader.camera_params",
                               &image_reader->camera_params);
   AddAndRegisterDefaultOption("ImageReader.default_focal_length_factor",
                               &image_reader->default_focal_length_factor);
+  AddAndRegisterDefaultOption("ImageReader.camera_mask_path",
+                              &image_reader->camera_mask_path);
 
   AddAndRegisterDefaultOption("SiftExtraction.num_threads",
                               &sift_extraction->num_threads);
@@ -240,8 +332,13 @@ void OptionManager::AddSequentialMatchingOptions() {
   AddAndRegisterDefaultOption("SequentialMatching.loop_detection_num_images",
                               &sequential_matching->loop_detection_num_images);
   AddAndRegisterDefaultOption(
-      "SequentialMatching.loop_detection_num_verifications",
-      &sequential_matching->loop_detection_num_verifications);
+      "SequentialMatching.loop_detection_num_nearest_neighbors",
+      &sequential_matching->loop_detection_num_nearest_neighbors);
+  AddAndRegisterDefaultOption("SequentialMatching.loop_detection_num_checks",
+                              &sequential_matching->loop_detection_num_checks);
+  AddAndRegisterDefaultOption(
+      "SequentialMatching.loop_detection_num_images_after_verification",
+      &sequential_matching->loop_detection_num_images_after_verification);
   AddAndRegisterDefaultOption(
       "SequentialMatching.loop_detection_max_num_features",
       &sequential_matching->loop_detection_max_num_features);
@@ -259,8 +356,13 @@ void OptionManager::AddVocabTreeMatchingOptions() {
 
   AddAndRegisterDefaultOption("VocabTreeMatching.num_images",
                               &vocab_tree_matching->num_images);
-  AddAndRegisterDefaultOption("VocabTreeMatching.num_verifications",
-                              &vocab_tree_matching->num_verifications);
+  AddAndRegisterDefaultOption("VocabTreeMatching.num_nearest_neighbors",
+                              &vocab_tree_matching->num_nearest_neighbors);
+  AddAndRegisterDefaultOption("VocabTreeMatching.num_checks",
+                              &vocab_tree_matching->num_checks);
+  AddAndRegisterDefaultOption(
+      "VocabTreeMatching.num_images_after_verification",
+      &vocab_tree_matching->num_images_after_verification);
   AddAndRegisterDefaultOption("VocabTreeMatching.max_num_features",
                               &vocab_tree_matching->max_num_features);
   AddAndRegisterDefaultOption("VocabTreeMatching.vocab_tree_path",
@@ -328,6 +430,8 @@ void OptionManager::AddBundleAdjustmentOptions() {
                               &bundle_adjustment->refine_principal_point);
   AddAndRegisterDefaultOption("BundleAdjustment.refine_extra_params",
                               &bundle_adjustment->refine_extra_params);
+  AddAndRegisterDefaultOption("BundleAdjustment.refine_extrinsics",
+                              &bundle_adjustment->refine_extrinsics);
 }
 
 void OptionManager::AddMapperOptions() {
@@ -443,92 +547,124 @@ void OptionManager::AddMapperOptions() {
                               &mapper->triangulation.ignore_two_view_tracks);
 }
 
-void OptionManager::AddDenseStereoOptions() {
-  if (added_dense_stereo_options_) {
+void OptionManager::AddPatchMatchStereoOptions() {
+  if (added_patch_match_stereo_options_) {
     return;
   }
-  added_dense_stereo_options_ = true;
+  added_patch_match_stereo_options_ = true;
 
-  AddAndRegisterDefaultOption("DenseStereo.max_image_size",
-                              &dense_stereo->max_image_size);
-  AddAndRegisterDefaultOption("DenseStereo.gpu_index",
-                              &dense_stereo->gpu_index);
-  AddAndRegisterDefaultOption("DenseStereo.window_radius",
-                              &dense_stereo->window_radius);
-  AddAndRegisterDefaultOption("DenseStereo.sigma_spatial",
-                              &dense_stereo->sigma_spatial);
-  AddAndRegisterDefaultOption("DenseStereo.sigma_color",
-                              &dense_stereo->sigma_color);
-  AddAndRegisterDefaultOption("DenseStereo.num_samples",
-                              &dense_stereo->num_samples);
-  AddAndRegisterDefaultOption("DenseStereo.ncc_sigma",
-                              &dense_stereo->ncc_sigma);
-  AddAndRegisterDefaultOption("DenseStereo.min_triangulation_angle",
-                              &dense_stereo->min_triangulation_angle);
-  AddAndRegisterDefaultOption("DenseStereo.incident_angle_sigma",
-                              &dense_stereo->incident_angle_sigma);
-  AddAndRegisterDefaultOption("DenseStereo.num_iterations",
-                              &dense_stereo->num_iterations);
-  AddAndRegisterDefaultOption("DenseStereo.geom_consistency",
-                              &dense_stereo->geom_consistency);
-  AddAndRegisterDefaultOption("DenseStereo.geom_consistency_regularizer",
-                              &dense_stereo->geom_consistency_regularizer);
-  AddAndRegisterDefaultOption("DenseStereo.geom_consistency_max_cost",
-                              &dense_stereo->geom_consistency_max_cost);
-  AddAndRegisterDefaultOption("DenseStereo.filter", &dense_stereo->filter);
-  AddAndRegisterDefaultOption("DenseStereo.filter_min_ncc",
-                              &dense_stereo->filter_min_ncc);
-  AddAndRegisterDefaultOption("DenseStereo.filter_min_triangulation_angle",
-                              &dense_stereo->filter_min_triangulation_angle);
-  AddAndRegisterDefaultOption("DenseStereo.filter_min_num_consistent",
-                              &dense_stereo->filter_min_num_consistent);
-  AddAndRegisterDefaultOption("DenseStereo.filter_geom_consistency_max_cost",
-                              &dense_stereo->filter_geom_consistency_max_cost);
-  AddAndRegisterDefaultOption("DenseStereo.cache_size",
-                              &dense_stereo->cache_size);
-  AddAndRegisterDefaultOption("DenseStereo.write_consistency_graph",
-                              &dense_stereo->write_consistency_graph);
+  AddAndRegisterDefaultOption("PatchMatchStereo.max_image_size",
+                              &patch_match_stereo->max_image_size);
+  AddAndRegisterDefaultOption("PatchMatchStereo.gpu_index",
+                              &patch_match_stereo->gpu_index);
+  AddAndRegisterDefaultOption("PatchMatchStereo.depth_min",
+                              &patch_match_stereo->depth_min);
+  AddAndRegisterDefaultOption("PatchMatchStereo.depth_max",
+                              &patch_match_stereo->depth_max);
+  AddAndRegisterDefaultOption("PatchMatchStereo.window_radius",
+                              &patch_match_stereo->window_radius);
+  AddAndRegisterDefaultOption("PatchMatchStereo.window_step",
+                              &patch_match_stereo->window_step);
+  AddAndRegisterDefaultOption("PatchMatchStereo.sigma_spatial",
+                              &patch_match_stereo->sigma_spatial);
+  AddAndRegisterDefaultOption("PatchMatchStereo.sigma_color",
+                              &patch_match_stereo->sigma_color);
+  AddAndRegisterDefaultOption("PatchMatchStereo.num_samples",
+                              &patch_match_stereo->num_samples);
+  AddAndRegisterDefaultOption("PatchMatchStereo.ncc_sigma",
+                              &patch_match_stereo->ncc_sigma);
+  AddAndRegisterDefaultOption("PatchMatchStereo.min_triangulation_angle",
+                              &patch_match_stereo->min_triangulation_angle);
+  AddAndRegisterDefaultOption("PatchMatchStereo.incident_angle_sigma",
+                              &patch_match_stereo->incident_angle_sigma);
+  AddAndRegisterDefaultOption("PatchMatchStereo.num_iterations",
+                              &patch_match_stereo->num_iterations);
+  AddAndRegisterDefaultOption("PatchMatchStereo.geom_consistency",
+                              &patch_match_stereo->geom_consistency);
+  AddAndRegisterDefaultOption(
+      "PatchMatchStereo.geom_consistency_regularizer",
+      &patch_match_stereo->geom_consistency_regularizer);
+  AddAndRegisterDefaultOption("PatchMatchStereo.geom_consistency_max_cost",
+                              &patch_match_stereo->geom_consistency_max_cost);
+  AddAndRegisterDefaultOption("PatchMatchStereo.filter",
+                              &patch_match_stereo->filter);
+  AddAndRegisterDefaultOption("PatchMatchStereo.filter_min_ncc",
+                              &patch_match_stereo->filter_min_ncc);
+  AddAndRegisterDefaultOption(
+      "PatchMatchStereo.filter_min_triangulation_angle",
+      &patch_match_stereo->filter_min_triangulation_angle);
+  AddAndRegisterDefaultOption("PatchMatchStereo.filter_min_num_consistent",
+                              &patch_match_stereo->filter_min_num_consistent);
+  AddAndRegisterDefaultOption(
+      "PatchMatchStereo.filter_geom_consistency_max_cost",
+      &patch_match_stereo->filter_geom_consistency_max_cost);
+  AddAndRegisterDefaultOption("PatchMatchStereo.cache_size",
+                              &patch_match_stereo->cache_size);
+  AddAndRegisterDefaultOption("PatchMatchStereo.write_consistency_graph",
+                              &patch_match_stereo->write_consistency_graph);
 }
 
-void OptionManager::AddDenseFusionOptions() {
-  if (added_dense_fusion_options_) {
+void OptionManager::AddStereoFusionOptions() {
+  if (added_stereo_fusion_options_) {
     return;
   }
-  added_dense_fusion_options_ = true;
+  added_stereo_fusion_options_ = true;
 
-  AddAndRegisterDefaultOption("DenseFusion.max_image_size",
-                              &dense_fusion->max_image_size);
-  AddAndRegisterDefaultOption("DenseFusion.min_num_pixels",
-                              &dense_fusion->min_num_pixels);
-  AddAndRegisterDefaultOption("DenseFusion.max_num_pixels",
-                              &dense_fusion->max_num_pixels);
-  AddAndRegisterDefaultOption("DenseFusion.max_traversal_depth",
-                              &dense_fusion->max_traversal_depth);
-  AddAndRegisterDefaultOption("DenseFusion.max_reproj_error",
-                              &dense_fusion->max_reproj_error);
-  AddAndRegisterDefaultOption("DenseFusion.max_depth_error",
-                              &dense_fusion->max_depth_error);
-  AddAndRegisterDefaultOption("DenseFusion.max_normal_error",
-                              &dense_fusion->max_normal_error);
-  AddAndRegisterDefaultOption("DenseFusion.check_num_images",
-                              &dense_fusion->check_num_images);
-  AddAndRegisterDefaultOption("DenseFusion.cache_size",
-                              &dense_fusion->cache_size);
+  AddAndRegisterDefaultOption("StereoFusion.max_image_size",
+                              &stereo_fusion->max_image_size);
+  AddAndRegisterDefaultOption("StereoFusion.min_num_pixels",
+                              &stereo_fusion->min_num_pixels);
+  AddAndRegisterDefaultOption("StereoFusion.max_num_pixels",
+                              &stereo_fusion->max_num_pixels);
+  AddAndRegisterDefaultOption("StereoFusion.max_traversal_depth",
+                              &stereo_fusion->max_traversal_depth);
+  AddAndRegisterDefaultOption("StereoFusion.max_reproj_error",
+                              &stereo_fusion->max_reproj_error);
+  AddAndRegisterDefaultOption("StereoFusion.max_depth_error",
+                              &stereo_fusion->max_depth_error);
+  AddAndRegisterDefaultOption("StereoFusion.max_normal_error",
+                              &stereo_fusion->max_normal_error);
+  AddAndRegisterDefaultOption("StereoFusion.check_num_images",
+                              &stereo_fusion->check_num_images);
+  AddAndRegisterDefaultOption("StereoFusion.cache_size",
+                              &stereo_fusion->cache_size);
 }
 
-void OptionManager::AddDenseMeshingOptions() {
-  if (added_dense_meshing_options_) {
+void OptionManager::AddPoissonMeshingOptions() {
+  if (added_poisson_meshing_options_) {
     return;
   }
-  added_dense_meshing_options_ = true;
+  added_poisson_meshing_options_ = true;
 
-  AddAndRegisterDefaultOption("DenseMeshing.point_weight",
-                              &dense_meshing->point_weight);
-  AddAndRegisterDefaultOption("DenseMeshing.depth", &dense_meshing->depth);
-  AddAndRegisterDefaultOption("DenseMeshing.color", &dense_meshing->color);
-  AddAndRegisterDefaultOption("DenseMeshing.trim", &dense_meshing->trim);
-  AddAndRegisterDefaultOption("DenseMeshing.num_threads",
-                              &dense_meshing->num_threads);
+  AddAndRegisterDefaultOption("PoissonMeshing.point_weight",
+                              &poisson_meshing->point_weight);
+  AddAndRegisterDefaultOption("PoissonMeshing.depth", &poisson_meshing->depth);
+  AddAndRegisterDefaultOption("PoissonMeshing.color", &poisson_meshing->color);
+  AddAndRegisterDefaultOption("PoissonMeshing.trim", &poisson_meshing->trim);
+  AddAndRegisterDefaultOption("PoissonMeshing.num_threads",
+                              &poisson_meshing->num_threads);
+}
+
+void OptionManager::AddDelaunayMeshingOptions() {
+  if (added_delaunay_meshing_options_) {
+    return;
+  }
+  added_delaunay_meshing_options_ = true;
+
+  AddAndRegisterDefaultOption("DelaunayMeshing.max_proj_dist",
+                              &delaunay_meshing->max_proj_dist);
+  AddAndRegisterDefaultOption("DelaunayMeshing.max_depth_dist",
+                              &delaunay_meshing->max_depth_dist);
+  AddAndRegisterDefaultOption("DelaunayMeshing.distance_sigma_factor",
+                              &delaunay_meshing->distance_sigma_factor);
+  AddAndRegisterDefaultOption("DelaunayMeshing.quality_regularization",
+                              &delaunay_meshing->quality_regularization);
+  AddAndRegisterDefaultOption("DelaunayMeshing.max_side_length_factor",
+                              &delaunay_meshing->max_side_length_factor);
+  AddAndRegisterDefaultOption("DelaunayMeshing.max_side_length_percentile",
+                              &delaunay_meshing->max_side_length_percentile);
+  AddAndRegisterDefaultOption("DelaunayMeshing.num_threads",
+                              &delaunay_meshing->num_threads);
 }
 
 void OptionManager::AddRenderOptions() {
@@ -552,24 +688,8 @@ void OptionManager::Reset() {
   FLAGS_logtostderr = false;
   FLAGS_v = 2;
 
-  *project_path = "";
-  *database_path = "";
-  *image_path = "";
-
-  *image_reader = ImageReaderOptions();
-  *sift_extraction = SiftExtractionOptions();
-  *sift_matching = SiftMatchingOptions();
-  *exhaustive_matching = ExhaustiveMatchingOptions();
-  *sequential_matching = SequentialMatchingOptions();
-  *vocab_tree_matching = VocabTreeMatchingOptions();
-  *spatial_matching = SpatialMatchingOptions();
-  *transitive_matching = TransitiveMatchingOptions();
-  *bundle_adjustment = BundleAdjustmentOptions();
-  *mapper = IncrementalMapperOptions();
-  *dense_stereo = mvs::PatchMatchOptions();
-  *dense_fusion = mvs::StereoFusionOptions();
-  *dense_meshing = mvs::PoissonReconstructionOptions();
-  *render = RenderOptions();
+  const bool kResetPaths = true;
+  ResetOptions(kResetPaths);
 
   desc_.reset(new boost::program_options::options_description());
 
@@ -590,10 +710,34 @@ void OptionManager::Reset() {
   added_transitive_match_options_ = false;
   added_ba_options_ = false;
   added_mapper_options_ = false;
-  added_dense_stereo_options_ = false;
-  added_dense_fusion_options_ = false;
-  added_dense_meshing_options_ = false;
+  added_patch_match_stereo_options_ = false;
+  added_stereo_fusion_options_ = false;
+  added_poisson_meshing_options_ = false;
+  added_delaunay_meshing_options_ = false;
   added_render_options_ = false;
+}
+
+void OptionManager::ResetOptions(const bool reset_paths) {
+  if (reset_paths) {
+    *project_path = "";
+    *database_path = "";
+    *image_path = "";
+  }
+  *image_reader = ImageReaderOptions();
+  *sift_extraction = SiftExtractionOptions();
+  *sift_matching = SiftMatchingOptions();
+  *exhaustive_matching = ExhaustiveMatchingOptions();
+  *sequential_matching = SequentialMatchingOptions();
+  *vocab_tree_matching = VocabTreeMatchingOptions();
+  *spatial_matching = SpatialMatchingOptions();
+  *transitive_matching = TransitiveMatchingOptions();
+  *bundle_adjustment = BundleAdjustmentOptions();
+  *mapper = IncrementalMapperOptions();
+  *patch_match_stereo = mvs::PatchMatchOptions();
+  *stereo_fusion = mvs::StereoFusionOptions();
+  *poisson_meshing = mvs::PoissonMeshingOptions();
+  *delaunay_meshing = mvs::DelaunayMeshingOptions();
+  *render = RenderOptions();
 }
 
 bool OptionManager::Check() {
@@ -601,11 +745,13 @@ bool OptionManager::Check() {
 
   if (added_database_options_) {
     const auto database_parent_path = GetParentDir(*database_path);
-    success = success && !ExistsDir(*database_path) &&
-              (database_parent_path == "" || ExistsDir(database_parent_path));
+    success = success && CHECK_OPTION_IMPL(!ExistsDir(*database_path)) &&
+              CHECK_OPTION_IMPL(database_parent_path == "" ||
+                                ExistsDir(database_parent_path));
   }
 
-  if (added_image_options_) success = success && ExistsDir(*image_path);
+  if (added_image_options_)
+    success = success && CHECK_OPTION_IMPL(ExistsDir(*image_path));
 
   if (image_reader) success = success && image_reader->Check();
   if (sift_extraction) success = success && sift_extraction->Check();
@@ -619,9 +765,10 @@ bool OptionManager::Check() {
   if (bundle_adjustment) success = success && bundle_adjustment->Check();
   if (mapper) success = success && mapper->Check();
 
-  if (dense_stereo) success = success && dense_stereo->Check();
-  if (dense_fusion) success = success && dense_fusion->Check();
-  if (dense_meshing) success = success && dense_meshing->Check();
+  if (patch_match_stereo) success = success && patch_match_stereo->Check();
+  if (stereo_fusion) success = success && stereo_fusion->Check();
+  if (poisson_meshing) success = success && poisson_meshing->Check();
+  if (delaunay_meshing) success = success && delaunay_meshing->Check();
 
   if (render) success = success && render->Check();
 
@@ -657,8 +804,8 @@ void OptionManager::Parse(const int argc, char** argv) {
     } else {
       vmap.notify();
     }
-  } catch (std::exception& e) {
-    std::cerr << "ERROR: Failed to parse options: " << e.what() << "."
+  } catch (std::exception& exc) {
+    std::cerr << "ERROR: Failed to parse options - " << exc.what() << "."
               << std::endl;
     exit(EXIT_FAILURE);
   } catch (...) {
@@ -708,20 +855,57 @@ bool OptionManager::ReRead(const std::string& path) {
 void OptionManager::Write(const std::string& path) const {
   boost::property_tree::ptree pt;
 
+  // First, put all options without a section and then those with a section.
+  // This is necessary as otherwise older Boost versions will write the
+  // options without a section in between other sections and therefore
+  // the errors will be assigned to the wrong section if read later.
+
   for (const auto& option : options_bool_) {
-    pt.put(option.first, *option.second);
+    if (!StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
   }
 
   for (const auto& option : options_int_) {
-    pt.put(option.first, *option.second);
+    if (!StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
   }
 
   for (const auto& option : options_double_) {
-    pt.put(option.first, *option.second);
+    if (!StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
   }
 
   for (const auto& option : options_string_) {
-    pt.put(option.first, *option.second);
+    if (!StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
+  }
+
+  for (const auto& option : options_bool_) {
+    if (StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
+  }
+
+  for (const auto& option : options_int_) {
+    if (StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
+  }
+
+  for (const auto& option : options_double_) {
+    if (StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
+  }
+
+  for (const auto& option : options_string_) {
+    if (StringContains(option.first, ".")) {
+      pt.put(option.first, *option.second);
+    }
   }
 
   boost::property_tree::write_ini(path, pt);

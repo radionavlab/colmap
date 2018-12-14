@@ -1,22 +1,39 @@
-// COLMAP - Structure-from-Motion and Multi-View Stereo.
-// Copyright (C) 2017  Johannes L. Schoenberger <jsch at inf.ethz.ch>
+// Copyright (c) 2018, ETH Zurich and UNC Chapel Hill.
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
 #include "feature/extraction.h"
 
-#include "ext/SiftGPU/SiftGPU.h"
+#include <numeric>
+
+#include "SiftGPU/SiftGPU.h"
 #include "feature/sift.h"
 #include "util/cuda.h"
 #include "util/misc.h"
@@ -36,6 +53,32 @@ void ScaleKeypoints(const Bitmap& bitmap, const Camera& camera,
   }
 }
 
+void MaskKeypoints(const Bitmap& mask, FeatureKeypoints* keypoints,
+                   FeatureDescriptors* descriptors) {
+  size_t out_index = 0;
+  BitmapColor<uint8_t> color;
+  for (size_t i = 0; i < keypoints->size(); ++i) {
+    if (!mask.GetPixel(static_cast<int>(keypoints->at(i).x),
+                       static_cast<int>(keypoints->at(i).y), &color) ||
+        color.r == 0) {
+      // Delete this keypoint by not copying it to the output.
+    } else {
+      // Retain this keypoint by copying it to the output index (in case this
+      // index differs from its current position).
+      if (out_index != i) {
+        keypoints->at(out_index) = keypoints->at(i);
+        for (int col = 0; col < descriptors->cols(); ++col) {
+          (*descriptors)(out_index, col) = (*descriptors)(i, col);
+        }
+      }
+      out_index += 1;
+    }
+  }
+
+  keypoints->resize(out_index);
+  descriptors->conservativeResize(out_index, descriptors->cols());
+}
+
 }  // namespace
 
 SiftFeatureExtractor::SiftFeatureExtractor(
@@ -47,6 +90,18 @@ SiftFeatureExtractor::SiftFeatureExtractor(
       image_reader_(reader_options_, &database_) {
   CHECK(reader_options_.Check());
   CHECK(sift_options_.Check());
+
+  std::shared_ptr<Bitmap> camera_mask;
+  if (!reader_options_.camera_mask_path.empty()) {
+    camera_mask = std::shared_ptr<Bitmap>(new Bitmap());
+    if (!camera_mask->Read(reader_options_.camera_mask_path,
+                           /*as_rgb*/ false)) {
+      std::cerr << "  ERROR: Cannot read camera mask file: "
+                << reader_options_.camera_mask_path
+                << ". No mask is going to be used." << std::endl;
+      camera_mask.reset();
+    }
+  }
 
   const int num_threads = GetEffectiveNumThreads(sift_options_.num_threads);
   CHECK_GT(num_threads, 0);
@@ -84,14 +139,16 @@ SiftFeatureExtractor::SiftFeatureExtractor(
     for (const auto& gpu_index : gpu_indices) {
       sift_gpu_options.gpu_index = std::to_string(gpu_index);
       extractors_.emplace_back(new internal::SiftFeatureExtractorThread(
-          sift_gpu_options, extractor_queue_.get(), writer_queue_.get()));
+          sift_gpu_options, camera_mask, extractor_queue_.get(),
+          writer_queue_.get()));
     }
   } else {
     auto custom_sift_options = sift_options_;
     custom_sift_options.use_gpu = false;
     for (int i = 0; i < num_threads; ++i) {
       extractors_.emplace_back(new internal::SiftFeatureExtractorThread(
-          custom_sift_options, extractor_queue_.get(), writer_queue_.get()));
+          custom_sift_options, camera_mask, extractor_queue_.get(),
+          writer_queue_.get()));
     }
   }
 
@@ -128,8 +185,9 @@ void SiftFeatureExtractor::Run() {
     }
 
     internal::ImageData image_data;
-    image_data.status = image_reader_.Next(
-        &image_data.camera, &image_data.image, &image_data.bitmap);
+    image_data.status =
+        image_reader_.Next(&image_data.camera, &image_data.image,
+                           &image_data.bitmap, &image_data.mask);
 
     if (image_data.status != ImageReader::Status::SUCCESS) {
       image_data.bitmap.Deallocate();
@@ -190,7 +248,7 @@ void FeatureImporter::Run() {
     Camera camera;
     Image image;
     Bitmap bitmap;
-    if (image_reader.Next(&camera, &image, &bitmap) !=
+    if (image_reader.Next(&camera, &image, &bitmap, nullptr) !=
         ImageReader::Status::SUCCESS) {
       continue;
     }
@@ -268,9 +326,11 @@ void ImageResizerThread::Run() {
 }
 
 SiftFeatureExtractorThread::SiftFeatureExtractorThread(
-    const SiftExtractionOptions& sift_options, JobQueue<ImageData>* input_queue,
-    JobQueue<ImageData>* output_queue)
+    const SiftExtractionOptions& sift_options,
+    const std::shared_ptr<Bitmap>& camera_mask,
+    JobQueue<ImageData>* input_queue, JobQueue<ImageData>* output_queue)
     : sift_options_(sift_options),
+      camera_mask_(camera_mask),
       input_queue_(input_queue),
       output_queue_(output_queue) {
   CHECK(sift_options_.Check());
@@ -328,6 +388,14 @@ void SiftFeatureExtractorThread::Run() {
         if (success) {
           ScaleKeypoints(image_data.bitmap, image_data.camera,
                          &image_data.keypoints);
+          if (camera_mask_) {
+            MaskKeypoints(*camera_mask_, &image_data.keypoints,
+                          &image_data.descriptors);
+          }
+          if (image_data.mask.Data()) {
+            MaskKeypoints(image_data.mask, &image_data.keypoints,
+                          &image_data.descriptors);
+          }
         } else {
           image_data.status = ImageReader::Status::FAILURE;
         }
@@ -374,13 +442,14 @@ void FeatureWriterThread::Run() {
       } else if (image_data.status == ImageReader::Status::BITMAP_ERROR) {
         std::cout << "  ERROR: Failed to read image file format." << std::endl;
       } else if (image_data.status ==
-                 ImageReader::Status::CAMERA_SINGLE_ERROR) {
+                 ImageReader::Status::CAMERA_SINGLE_DIM_ERROR) {
         std::cout << "  ERROR: Single camera specified, "
                      "but images have different dimensions."
                   << std::endl;
-      } else if (image_data.status == ImageReader::Status::CAMERA_DIM_ERROR) {
-        std::cout << "  ERROR: Image previously processed, but current file "
-                     "has different image dimensions."
+      } else if (image_data.status ==
+                 ImageReader::Status::CAMERA_EXIST_DIM_ERROR) {
+        std::cout << "  ERROR: Image previously processed, but current image "
+                     "has different dimensions."
                   << std::endl;
       } else if (image_data.status == ImageReader::Status::CAMERA_PARAM_ERROR) {
         std::cout << "  ERROR: Camera has invalid parameters." << std::endl;
@@ -396,23 +465,24 @@ void FeatureWriterThread::Run() {
                                 image_data.camera.Width(),
                                 image_data.camera.Height())
                 << std::endl;
-      std::cout << StringPrintf("  Camera:          %d (%s)",
+      std::cout << StringPrintf("  Camera:          #%d - %s",
                                 image_data.camera.CameraId(),
                                 image_data.camera.ModelName().c_str())
                 << std::endl;
-      std::cout << StringPrintf("  Focal Length:    %.2fpx (%s)",
-                                image_data.camera.MeanFocalLength(),
-                                image_data.camera.HasPriorFocalLength()
-                                    ? "EXIF"
-                                    : "Default")
-                << std::endl;
+      std::cout << StringPrintf("  Focal Length:    %.2fpx",
+                                image_data.camera.MeanFocalLength());
+      if (image_data.camera.HasPriorFocalLength()) {
+        std::cout << " (Prior)" << std::endl;
+      } else {
+        std::cout << std::endl;
+      }
       if (image_data.image.HasTvecPrior()) {
-        std::cout
-            << StringPrintf(
-                   "  GPS:             LAT=%.3f, LON=%.3f, ALT=%.3f (EXIF)",
-                   image_data.image.TvecPrior(0), image_data.image.TvecPrior(1),
-                   image_data.image.TvecPrior(2))
-            << std::endl;
+        std::cout << StringPrintf(
+                         "  GPS:             LAT=%.3f, LON=%.3f, ALT=%.3f",
+                         image_data.image.TvecPrior(0),
+                         image_data.image.TvecPrior(1),
+                         image_data.image.TvecPrior(2))
+                  << std::endl;
       }
       std::cout << StringPrintf("  Features:        %d",
                                 image_data.keypoints.size())
