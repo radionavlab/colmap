@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
   std::cout << "Setting up reconstruction..." << std::endl;
   {
     reconstruction.Load(db_cache);
-    reconstruction.SetUp(&db_cache.SceneGraph());
+    reconstruction.SetUp(&db_cache.CorrespondenceGraph());
     const EIGEN_STL_UMAP(image_t, class Image)& images = db_cache.Images();
 
     for(auto it = images.begin(); it != images.end(); ++it) {
@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
   // Triangulate the 3D position of all points
   std::cout << "Triangulating..." << std::endl;
 
-  IncrementalTriangulator triangulator(&db_cache.SceneGraph(), &reconstruction);
+  IncrementalTriangulator triangulator(&db_cache.CorrespondenceGraph(), &reconstruction);
   const std::vector<image_t>& image_ids = reconstruction.RegImageIds();
   const IncrementalTriangulator::Options triangulator_options;
   for(const image_t& image_id: image_ids) {
