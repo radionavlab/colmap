@@ -268,9 +268,32 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Calculate covariance
+  {
+    
+    BundleAdjustmentOptions::CovarianceOptions cov_options;
+    cov_options.compute = true;
+    cov_options.center_point = Eigen::Vector3d(-1.226307, -0.113879, 0.667136);
+    cov_options.radius = 1.0;
+
+    OptionManager options_(options);
+    options_.bundle_adjustment->priors = true;
+    options_.bundle_adjustment->cov = cov_options;
+    options_.bundle_adjustment->loss_function_type = 
+        BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
+    options_.bundle_adjustment->loss_function_scale = 1;
+    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+    options_.bundle_adjustment->refine_focal_length = false;
+    options_.bundle_adjustment->refine_extra_params = false;
+
+    BundleAdjustmentController ba_controller(options_, &reconstruction);
+    ba_controller.Start();
+    ba_controller.Wait(); 
+  }
+
   // Save output
   std::cout << "Saving output..." << std::endl;
-  // reconstruction.Write(export_path);
+  reconstruction.Write(export_path);
   reconstruction.WriteText(export_path);
   // reconstruction.ExportPLY(export_path + "/model.ply");
   

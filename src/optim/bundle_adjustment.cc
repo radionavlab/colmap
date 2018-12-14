@@ -300,9 +300,8 @@ if (options_.cov.compute) {
     ceres::Covariance covariance(covariance_options);
     
     // ROI specified by cyllinder
-    const Eigen::Vector3d axle = options_.cov.axle;
-    const double axle_threshhold = options_.cov.axle_threshhold;
-    const double alt_threshhold = options_.cov.alt_threshhold;
+    const Eigen::Vector3d center_point = options_.cov.center_point;
+    const double radius = options_.cov.radius;
  
     // Only calculate the covariance of points within the ROI
     std::vector<point3D_t> problem_points3D_ids;
@@ -313,8 +312,7 @@ if (options_.cov.compute) {
       const Eigen::Vector3d p = point3D.second.XYZ();
 
       if( problem_->HasParameterBlock(data) &&
-          p.cross(axle).norm() < axle_threshhold &&
-          std::fabs(p.dot(axle))   < alt_threshhold ) {
+          (p.head(2) - center_point.head(2)).norm() < radius ) {
         problem_points3D_ids.push_back(point3D.first);
         covariance_blocks.emplace_back(data, data);
       } else {

@@ -40,9 +40,8 @@ struct BundleAdjustmentOptions {
   // Whether to compute or not and region of interest specified by cyllinder
   typedef struct {
     bool compute = false;
-    Eigen::Vector3d axle = Eigen::Vector3d(0.0,0.0,1.0);
-    double axle_threshhold = 1.0;
-    double alt_threshhold = 1.0;
+    Eigen::Vector3d center_point = Eigen::Vector3d(0.0,0.0,1.0);
+    double radius = 1.0;
   } CovarianceOptions;
 
   // Scaling factor determines residual at which robustification takes place.
