@@ -37,6 +37,3 @@ endif()
 
 COLMAP_ADD_EXECUTABLE(colmap_exe colmap.cc)
 set_target_properties(colmap_exe PROPERTIES OUTPUT_NAME colmap)
-
-COLMAP_ADD_EXECUTABLE(ssba_exe ssba.cc)
-set_target_properties(ssba_exe PROPERTIES OUTPUT_NAME ssba)

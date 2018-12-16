@@ -294,11 +294,7 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
   std::string solver_error;
   CHECK(solver_options.IsValid(&solver_error)) << solver_error;
 
-  reconstruction->PrintResiduals();
-  PrintCurrentCost();
   ceres::Solve(solver_options, problem_.get(), &summary_);
-  reconstruction->PrintResiduals();
-  PrintCurrentCost();
 
   if (solver_options.minimizer_progress_to_stdout) {
     std::cout << std::endl;
@@ -309,42 +305,33 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     PrintSolverSummary(summary_);
   }
 
-if (options_.cov.compute) {
+  if (options_.cov.compute) {
     // Compute covariance matrix of each 3D point
     ceres::Covariance::Options covariance_options;
     covariance_options.num_threads = solver_options.num_threads;
     ceres::Covariance covariance(covariance_options);
-    
-    // ROI specified by cyllinder
-    const Eigen::Vector3d center_point = options_.cov.center_point;
-    const double radius = options_.cov.radius;
  
-    // Only calculate the covariance of points within the ROI
-    std::vector<point3D_t> problem_points3D_ids;
-    std::vector<point3D_t> not_roi_point_ids;
+    // Load blocks into covariance calculator
     std::vector< std::pair<const double*, const double*> > covariance_blocks;
-    for (const auto& point3D : reconstruction->Points3D()) {
+    std::vector<point3D_t> point3D_ids;
+    for(const auto& point3D : reconstruction->Points3D()) {
       const double* data = point3D.second.XYZ().data();
-      const Eigen::Vector3d p = point3D.second.XYZ();
-
-      if( problem_->HasParameterBlock(data) &&
-          (p.head(2) - center_point.head(2)).norm() < radius ) {
-        problem_points3D_ids.push_back(point3D.first);
+      if(problem_->HasParameterBlock(data)) {
         covariance_blocks.emplace_back(data, data);
-      } else {
-        not_roi_point_ids.push_back(point3D.first);
+        point3D_ids.push_back(point3D.first);
       }
     }
- 
+
+    // Calculate covariance
     PrintHeading1("Computing covariance of " + 
                   std::to_string(covariance_blocks.size()) + " points");
     CHECK(covariance.Compute(covariance_blocks, problem_.get()));
- 
+
     // Extract covariance
-    for (const auto point3D_id : problem_points3D_ids) {
+    for(const auto& point3D_id : point3D_ids) {
       Point3D& point3D = reconstruction->Point3D(point3D_id);
       const double* data = point3D.XYZ().data();
- 
+
       // The matrix returned by Ceres is row-major so we must create a special 
       // container for it. Eigen handles the conversion from row-major to 
       // column-major automatically when SetCovariance() is called
@@ -352,18 +339,7 @@ if (options_.cov.compute) {
       covariance.GetCovarianceBlock(data, data, P.data());
       point3D.SetCovariance(P);
     }
-
-    // Add dummy covariance for those points not in the ROI
-    for (const auto point3D_id : not_roi_point_ids) {
-      Point3D& point3D = reconstruction->Point3D(point3D_id);
- 
-      // The matrix returned by Ceres is row-major so we must create a special 
-      // container for it. Eigen handles the conversion from row-major to 
-      // column-major automatically when SetCovariance() is called
-      Eigen::Matrix<double, 3, 3, Eigen::RowMajor> P = (Eigen::Matrix<double, 3, 3>() << -1, -1, -1, -1, -1, -1, -1, -1, -1).finished();
-      point3D.SetCovariance(P);
-    }
-   }
+  }
 
   TearDown(reconstruction);
 

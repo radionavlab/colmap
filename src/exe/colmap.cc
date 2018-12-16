@@ -175,6 +175,176 @@ int RunAutomaticReconstructor(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
+int RunBatchMapper(int argc, char** argv) {
+  std::string input_path;
+  std::string output_path;
+
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.AddImageOptions();
+  options.AddRequiredOption("output_path", &output_path);
+  options.AddBundleAdjustmentOptions();
+  options.Parse(argc, argv);
+
+  if (!ExistsDir(output_path)) {
+    std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Create a new reconstruction
+  ReconstructionManager reconstruction_manager;
+  const size_t reconstruction_idx = reconstruction_manager.Add();
+  Reconstruction& reconstruction = reconstruction_manager.Get(reconstruction_idx);
+
+//   // Load images and features from database
+//   Database db(*options.database_path);
+//   DatabaseCache db_cache;
+//   const size_t min_num_matches = 8;
+//   const bool ignore_watermarks = true;
+//   const std::set<std::string> image_cache_names;
+//   db_cache.Load(db, min_num_matches, ignore_watermarks, image_cache_names);
+// 
+//   // Load the database.
+//   // Contains the priors.
+//   Database db(*options.database_path);
+//   std::vector<Image> db_imgs = db.ReadAllImages();
+//   for(const Image& db_img: db_imgs) {
+//     Image& reconstruction_img =
+//       reconstruction_manager.Get(reconstruction_idx).Image(db_img.ImageId());
+// 
+//     reconstruction_img.SetQvecPrior(db_img.QvecPrior());
+//     reconstruction_img.SetTvecPrior(db_img.TvecPrior());
+//     reconstruction_img.SetCovariancePrior(db_img.CovariancePrior());
+//   }
+// 
+//   // Set up reconstruction
+//   std::cout << "Setting up reconstruction..." << std::endl;
+//   {
+//     reconstruction.Load(db_cache);
+//     reconstruction.SetUp(&db_cache.CorrespondenceGraph());
+//     const EIGEN_STL_UMAP(image_t, class Image)& images = db_cache.Images();
+// 
+//     for(auto it = images.begin(); it != images.end(); ++it) {
+//       reconstruction.RegisterImage(it->first);
+//     }
+//   }
+// 
+//   // Add pre-computed params to camera
+//   std::cout << "Loading camera params..." << std::endl;
+// 
+//   const camera_t camera_id = 1;
+//   const size_t width = 3840;
+//   const size_t height = 2160;
+//   const std::string params = "1662.07,1920,1080,-0.021983";
+// 
+//   Camera& cam = reconstruction.Camera(camera_id);
+//   cam.SetWidth(width);
+//   cam.SetHeight(height);
+//   cam.SetParamsFromString(params);
+// 
+//   if(!cam.VerifyParams()) {
+//     std::cerr << "Camera params wrong!" << std::endl;
+//     return EXIT_FAILURE;
+//   }
+// 
+//   // Sets both prior and initial guess
+//   // reconstruction.AddPriors(image_priors);
+// 
+//   // Triangulate the 3D position of all points
+//   std::cout << "Triangulating..." << std::endl;
+// 
+//   IncrementalTriangulator triangulator(&db_cache.CorrespondenceGraph(), &reconstruction);
+//   const std::vector<image_t>& image_ids = reconstruction.RegImageIds();
+//   const IncrementalTriangulator::Options triangulator_options;
+//   for(const image_t& image_id: image_ids) {
+//     triangulator.TriangulateImage(triangulator_options, image_id);
+//     triangulator.CompleteImage(triangulator_options, image_id);
+//   }
+//   triangulator.CompleteAllTracks(triangulator_options);
+//   triangulator.MergeAllTracks(triangulator_options);
+// 
+//   for(size_t i = 0; i < 2; i++) {
+//     if(i != 0) {
+//       // Retriangulate
+//       std::cout << "Retriangulating..." << std::endl;
+//       {
+//         triangulator.Retriangulate(triangulator_options);
+//         triangulator.CompleteAllTracks(triangulator_options);
+//         triangulator.MergeAllTracks(triangulator_options);
+//       }
+//     }
+// 
+//     // Run robust global BA
+//     std::cout << "Running robust global BA..." << std::endl;
+//     {
+//       OptionManager options_(options);
+//       options_.bundle_adjustment->priors = true;
+//       options_.bundle_adjustment->loss_function_type = 
+//           BundleAdjustmentOptions::LossFunctionType::CAUCHY;
+//       options_.bundle_adjustment->loss_function_scale = 1;
+//       options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+//       options_.bundle_adjustment->refine_focal_length = false;
+//       options_.bundle_adjustment->refine_extra_params = false;
+// 
+//       BundleAdjustmentController ba_controller(options_, &reconstruction);
+//       ba_controller.Start();
+//       ba_controller.Wait();
+//     }
+//   }
+// 
+//   // Filter points
+//   std::cout << "Filtering 3D points..." << std::endl;
+//   {
+//     const double max_reproj_error = 4.0;
+//     const double min_tri_angle = 10; // deg
+//     reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+//   }
+// 
+//   // Iteratively run global BA
+//   for(size_t i = 0; i < 5; i++) {
+// 
+//     // Run strict global BA
+//     std::cout << "Running strict global BA..." << std::endl;
+//     {
+//       OptionManager options_(options);
+//       options_.bundle_adjustment->priors = true;
+//       options_.bundle_adjustment->loss_function_type = 
+//           BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
+//       options_.bundle_adjustment->loss_function_scale = 1;
+// 
+//       BundleAdjustmentController ba_controller(options_, &reconstruction);
+//       ba_controller.Start();
+//       ba_controller.Wait();
+//     }
+// 
+//     // Complete and merge 3D point tracks
+//     std::cout << "Completing and merging tracks..." << std::endl;
+//     {
+//       triangulator.CompleteAllTracks(triangulator_options);
+//       triangulator.MergeAllTracks(triangulator_options);
+//     }
+// 
+//     // Filter points
+//     std::cout << "Filtering 3D points..." << std::endl;
+//     {
+//       const double max_reproj_error = 4.0;
+//       const double min_tri_angle = 10; // deg
+//       reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
+//     }
+//   }
+// 
+//   // Save output
+//   std::cout << "Saving output..." << std::endl;
+//   reconstruction.Write(export_path);
+//   reconstruction.WriteText(export_path);
+//   // reconstruction.ExportPLY(export_path + "/model.ply");
+//   
+//   std::cout << "Success!" << std::endl;
+
+
+  return EXIT_SUCCESS;
+}
+
 int RunBundleAdjuster(int argc, char** argv) {
   std::string input_path;
   std::string output_path;
@@ -212,6 +382,77 @@ int RunColorExtractor(int argc, char** argv) {
   reconstruction.ExtractColorsForAllImages(*options.image_path);
   reconstruction.Write(output_path);
 
+  return EXIT_SUCCESS;
+}
+
+int RunCovarianceEvaluator(int argc, char** argv) {
+
+  std::string input_path;
+  std::string output_path;
+
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.AddImageOptions();
+  options.AddDefaultOption("input_path", &input_path);
+  options.AddRequiredOption("output_path", &output_path);
+  options.AddBundleAdjustmentOptions();
+  options.AddMapperOptions();
+  options.Parse(argc, argv);
+
+  if (!ExistsDir(output_path)) {
+    std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Read a reconstruction from path
+  // Contains the estimated camera poses, camera params, 3D points
+  ReconstructionManager reconstruction_manager;
+  size_t reconstruction_idx;
+  if (input_path != "") {
+    if (!ExistsDir(input_path)) {
+      std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+      return EXIT_FAILURE;
+    }
+    reconstruction_idx = reconstruction_manager.Read(input_path);
+  }
+
+  // Load the database.
+  // Contains the priors.
+  Database db(*options.database_path);
+  std::vector<Image> db_imgs = db.ReadAllImages();
+  for(const Image& db_img: db_imgs) {
+    Image& reconstruction_img =
+      reconstruction_manager.Get(reconstruction_idx).Image(db_img.ImageId());
+
+    reconstruction_img.SetQvecPrior(db_img.QvecPrior());
+    reconstruction_img.SetTvecPrior(db_img.TvecPrior());
+    reconstruction_img.SetCovariancePrior(db_img.CovariancePrior());
+  }
+
+  // BundleAdjustmentOptions::CovarianceOptions cov_options;
+  // cov_options.compute = true;
+
+  // OptionManager options_(options);
+  // options_.bundle_adjustment->priors = true;
+  // options_.bundle_adjustment->cov = cov_options;
+  // options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+
+  // BundleAdjustmentController ba_controller(options_, &reconstruction);
+  // ba_controller.Start();
+  // ba_controller.Wait(); 
+
+  // Save output
+  // In case the reconstruction is continued from an existing reconstruction, do
+  // not create sub-folders but directly write the results.
+  // if (input_path != "" && reconstruction_manager.Size() > 0) {
+  //   reconstruction_manager.Get(0).Write(output_path);
+  //   std::cout << "Saving output..." << std::endl;
+  //   reconstruction.Write(export_path);
+  //   reconstruction.WriteText(export_path);
+  //   // reconstruction.ExportPLY(export_path + "/model.ply");
+  // }
+  
+  std::cout << "Success!" << std::endl;
   return EXIT_SUCCESS;
 }
 
@@ -1930,8 +2171,10 @@ int main(int argc, char** argv) {
   std::vector<std::pair<std::string, command_func_t>> commands;
   commands.emplace_back("gui", &RunGraphicalUserInterface);
   commands.emplace_back("automatic_reconstructor", &RunAutomaticReconstructor);
+  commands.emplace_back("batch_mapper", &RunBatchMapper);
   commands.emplace_back("bundle_adjuster", &RunBundleAdjuster);
   commands.emplace_back("color_extractor", &RunColorExtractor);
+  commands.emplace_back("covariance_evaluator", &RunCovarianceEvaluator);
   commands.emplace_back("database_creator", &RunDatabaseCreator);
   commands.emplace_back("delaunay_mesher", &RunDelaunayMesher);
   commands.emplace_back("exhaustive_matcher", &RunExhaustiveMatcher);

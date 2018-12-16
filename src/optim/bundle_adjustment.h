@@ -52,11 +52,8 @@ struct BundleAdjustmentOptions {
   LossFunctionType loss_function_type = LossFunctionType::TRIVIAL;
 
   // Covariance options. 
-  // Whether to compute or not and region of interest specified by cyllinder
   typedef struct {
     bool compute = false;
-    Eigen::Vector3d center_point = Eigen::Vector3d(0.0,0.0,1.0);
-    double radius = 1.0;
   } CovarianceOptions;
 
   // Scaling factor determines residual at which robustification takes place.

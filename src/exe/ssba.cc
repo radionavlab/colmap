@@ -32,57 +32,6 @@ namespace {
     typedef Eigen::Matrix<double, 9, 9> cov_t;
 }
 
-void ReadCameraMeasurements(const std::string& path,
-                         std::vector<std::string>* image_names,
-                         std::vector<tvec_t>* ricI_vec,
-                         std::vector<tvec_t>* rciC_vec,
-                         std::vector<R_t>* RIC_vec,
-                         std::vector<cov_t>* cov_vec) {
-  std::vector<std::string> lines = ReadTextFileLines(path);
-  for (const auto line : lines) {
-    std::stringstream line_parser(line);
-
-    // Buffers to store data in
-    std::string image_name = "";
-    tvec_t ricI;
-    tvec_t rciC;
-    R_t RIC;
-    cov_t cov;
-
-    // Read data into buffers
-    // Translation
-    line_parser >> 
-        image_name >> 
-        ricI(0) >> 
-        ricI(1) >> 
-        ricI(2) >> 
-        rciC(0) >>
-        rciC(1) >>
-        rciC(2);
-
-    // Rotation
-    for(int i = 0; i < 3; i ++) {
-        for(int j = 0; j < 3; j++) {
-            line_parser >> RIC(j, i);
-        }
-    }
-
-    // Covariance
-    for(int i = 0; i < 9; i++) {
-        for(int j = 0; j < 9; j++) {
-            line_parser >> cov(j, i);
-        }
-    }
-
-    // Push data into vectors
-    image_names->push_back(image_name);
-    ricI_vec->push_back(ricI);
-    rciC_vec->push_back(rciC);
-    RIC_vec->push_back(RIC);
-    cov_vec->push_back(cov);
-  }
-}
-
 int main(int argc, char** argv) {
   InitializeGlog(argv);
 
@@ -152,33 +101,6 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  // Load the priors.
-  std::cout << "Loading priors..." << std::endl;
-
-  std::vector<std::string> image_names;
-  std::vector<tvec_t> ricI_vec;
-  std::vector<tvec_t> rciC_vec;
-  std::vector<R_t> RIC_vec;
-  std::vector<cov_t> cov_vec;
-  ReadCameraMeasurements(
-          metadata_path, 
-          &image_names, 
-          &ricI_vec, 
-          &rciC_vec, 
-          &RIC_vec, 
-          &cov_vec);
-
-  std::unordered_map< std::string, std::tuple<tvec_t, tvec_t, qvec_t, Eigen::Matrix<double, 6, 6> > > image_priors;
-  for(size_t i = 0; i < rciC_vec.size(); i++) {
-    image_priors.insert({
-                image_names[i], 
-                std::make_tuple(ricI_vec[i],
-                                rciC_vec[i],
-                                RotationMatrixToQuaternion(RIC_vec[i]), 
-                                cov_vec[i].bottomRightCorner<6,6>())      // Bottom right corner is [eIC, ricI]
-    });
-  }
-
   // Sets both prior and initial guess
   reconstruction.AddPriors(image_priors);
 
@@ -243,9 +165,6 @@ int main(int argc, char** argv) {
       options_.bundle_adjustment->loss_function_type = 
           BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
       options_.bundle_adjustment->loss_function_scale = 1;
-      options_.bundle_adjustment->solver_options.max_num_iterations = 100;
-      options_.bundle_adjustment->refine_focal_length = true;
-      options_.bundle_adjustment->refine_extra_params = true;
 
       BundleAdjustmentController ba_controller(options_, &reconstruction);
       ba_controller.Start();
@@ -266,29 +185,6 @@ int main(int argc, char** argv) {
       const double min_tri_angle = 10; // deg
       reconstruction.FilterAllPoints3D(max_reproj_error, min_tri_angle);
     }
-  }
-
-  // Calculate covariance
-  {
-    
-    BundleAdjustmentOptions::CovarianceOptions cov_options;
-    cov_options.compute = true;
-    cov_options.center_point = Eigen::Vector3d(-1.226307, -0.113879, 0.667136);
-    cov_options.radius = 1.0;
-
-    OptionManager options_(options);
-    options_.bundle_adjustment->priors = true;
-    options_.bundle_adjustment->cov = cov_options;
-    options_.bundle_adjustment->loss_function_type = 
-        BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
-    options_.bundle_adjustment->loss_function_scale = 1;
-    options_.bundle_adjustment->solver_options.max_num_iterations = 100;
-    options_.bundle_adjustment->refine_focal_length = false;
-    options_.bundle_adjustment->refine_extra_params = false;
-
-    BundleAdjustmentController ba_controller(options_, &reconstruction);
-    ba_controller.Start();
-    ba_controller.Wait(); 
   }
 
   // Save output
