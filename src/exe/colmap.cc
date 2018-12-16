@@ -757,6 +757,61 @@ int RunImageUndistorter(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
+int RunPriorsLoader(int argc, char** argv) {
+  std::string metadata_path;
+
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.AddRequiredOption("metadata_path", &metadata_path);
+  options.Parse(argc, argv);
+
+  std::cout << "Loading Priors..." << std::endl;
+
+  // Load images and features from database
+  Database db(*options.database_path);
+
+  // Load priors from text file into database
+  std::vector<std::string> lines = ReadTextFileLines(metadata_path);
+  for (const auto line : lines) {
+    std::stringstream line_parser(line);
+
+    std::string image_name;
+    line_parser >> image_name;
+
+    Eigen::Vector3d t_vec_prior;
+    line_parser >> 
+      t_vec_prior(0) >>
+      t_vec_prior(1) >>
+      t_vec_prior(2);
+
+    Eigen::Vector4d q_vec_prior;
+    line_parser >> 
+      q_vec_prior(0) >>
+      q_vec_prior(1) >>
+      q_vec_prior(2) >>
+      q_vec_prior(3);
+
+    Eigen::Matrix<double, 6, 6> covariance_prior;
+    for(size_t row = 0; row < 6; ++row) {
+      for(size_t col = 0; col < 6; ++col) {
+        line_parser >> covariance_prior(row, col);
+      }
+    }
+
+    if(db.ExistsImageWithName(image_name)) {
+      Image img = db.ReadImageWithName(image_name);
+      img.SetTvecPrior(t_vec_prior);
+      img.SetQvecPrior(q_vec_prior);
+      img.SetCovariancePrior(covariance_prior);
+      db.UpdateImage(img);
+    }
+  }
+
+  std::cout << "Success!" << std::endl;
+
+  return EXIT_SUCCESS;
+}
+
 int RunMapper(int argc, char** argv) {
   std::string input_path;
   std::string output_path;
@@ -1887,6 +1942,7 @@ int main(int argc, char** argv) {
   commands.emplace_back("image_rectifier", &RunImageRectifier);
   commands.emplace_back("image_registrator", &RunImageRegistrator);
   commands.emplace_back("image_undistorter", &RunImageUndistorter);
+  commands.emplace_back("priors_loader", &RunPriorsLoader);
   commands.emplace_back("mapper", &RunMapper);
   commands.emplace_back("matches_importer", &RunMatchesImporter);
   commands.emplace_back("model_aligner", &RunModelAligner);

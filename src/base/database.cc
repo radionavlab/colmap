@@ -235,6 +235,22 @@ Image ReadImageRow(sqlite3_stmt* sql_stmt) {
     }
   }
 
+  // Column major covariance
+  if(sqlite3_column_type(sql_stmt, 10) != SQLITE_NULL) {
+    std::string cov_string = std::string(reinterpret_cast<const char*>(sqlite3_column_text(sql_stmt, 10)));
+    Eigen::Matrix<double, 6, 6> cov_prior;
+    std::stringstream cov_ss(cov_string); 
+    const char delimiter = ' ';
+    std::string token; 
+    for(size_t row = 0; row < 6; ++row) {
+      for(size_t col = 0; col < 6; ++col) { 
+        std::getline(cov_ss, token, delimiter);
+        cov_prior(row, col) = std::stod(token);
+      }
+    }
+    image.SetCovariancePrior(cov_prior);
+  }
+
   return image;
 }
 
@@ -644,6 +660,25 @@ image_t Database::WriteImage(const Image& image,
   SQLITE3_CALL(
       sqlite3_bind_double(sql_stmt_add_image_, 10, image.TvecPrior(2)));
 
+  // Serialize covariance matrix if it is not identically zero
+  if(image.HasCovariancePrior()) {
+    std::string cov_string = "";
+    for(size_t row = 0; row < 6; ++row) {
+      for(size_t col = 0; col < 6; ++col) {
+        cov_string += std::to_string(image.CovariancePrior()(row, col));
+
+        if(col + row*6 != 35) {
+          cov_string += " ";
+        }
+      }
+    }
+    SQLITE3_CALL(sqlite3_bind_text(sql_stmt_add_image_, 11, cov_string.c_str(),
+                                   static_cast<int>(cov_string.size()),
+                                   SQLITE_TRANSIENT));
+  } else {
+    SQLITE3_CALL(sqlite3_bind_null(sql_stmt_add_image_, 11));
+  }
+
   SQLITE3_CALL(sqlite3_step(sql_stmt_add_image_));
   SQLITE3_CALL(sqlite3_reset(sql_stmt_add_image_));
 
@@ -780,7 +815,26 @@ void Database::UpdateImage(const Image& image) const {
   SQLITE3_CALL(
       sqlite3_bind_double(sql_stmt_update_image_, 9, image.TvecPrior(2)));
 
-  SQLITE3_CALL(sqlite3_bind_int64(sql_stmt_update_image_, 10, image.ImageId()));
+  // Serialize covariance matrix if it is not identically zero
+  if(image.HasCovariancePrior()) {
+    std::string cov_string = "";
+    for(size_t row = 0; row < 6; ++row) {
+      for(size_t col = 0; col < 6; ++col) {
+        cov_string += std::to_string(image.CovariancePrior()(row, col));
+
+        if(col + row*6 != 35) {
+          cov_string += " ";
+        }
+      }
+    }
+    SQLITE3_CALL(sqlite3_bind_text(sql_stmt_update_image_, 10, cov_string.c_str(),
+                                   static_cast<int>(cov_string.size()),
+                                   SQLITE_TRANSIENT));
+  } else {
+    SQLITE3_CALL(sqlite3_bind_null(sql_stmt_update_image_, 10));
+  }
+
+  SQLITE3_CALL(sqlite3_bind_int64(sql_stmt_update_image_, 11, image.ImageId()));
 
   SQLITE3_CALL(sqlite3_step(sql_stmt_update_image_));
   SQLITE3_CALL(sqlite3_reset(sql_stmt_update_image_));
@@ -890,8 +944,8 @@ void Database::PrepareSQLStatements() {
 
   sql =
       "INSERT INTO images(image_id, name, camera_id, prior_qw, prior_qx, "
-      "prior_qy, prior_qz, prior_tx, prior_ty, prior_tz) VALUES(?, ?, ?, ?, ?, "
-      "?, ?, ?, ?, ?);";
+      "prior_qy, prior_qz, prior_tx, prior_ty, prior_tz, prior_cov) VALUES(?, ?, ?, ?, ?, "
+      "?, ?, ?, ?, ?, ?);";
   SQLITE3_CALL(
       sqlite3_prepare_v2(database_, sql.c_str(), -1, &sql_stmt_add_image_, 0));
   sql_stmts_.push_back(sql_stmt_add_image_);
@@ -908,7 +962,7 @@ void Database::PrepareSQLStatements() {
 
   sql =
       "UPDATE images SET name=?, camera_id=?, prior_qw=?, prior_qx=?, "
-      "prior_qy=?, prior_qz=?, prior_tx=?, prior_ty=?, prior_tz=? WHERE "
+      "prior_qy=?, prior_qz=?, prior_tx=?, prior_ty=?, prior_tz=?, prior_cov=? WHERE "
       "image_id=?;";
   SQLITE3_CALL(sqlite3_prepare_v2(database_, sql.c_str(), -1,
                                   &sql_stmt_update_image_, 0));
@@ -1074,6 +1128,7 @@ void Database::CreateImageTable() const {
       "    prior_tx   REAL,"
       "    prior_ty   REAL,"
       "    prior_tz   REAL,"
+      "    prior_cov  TEXT,"
       "CONSTRAINT image_id_check CHECK(image_id >= 0 and image_id < %d),"
       "FOREIGN KEY(camera_id) REFERENCES cameras(camera_id));"
       "CREATE UNIQUE INDEX IF NOT EXISTS index_name ON images(name);",
