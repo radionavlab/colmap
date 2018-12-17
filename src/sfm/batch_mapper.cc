@@ -123,7 +123,6 @@ bool BatchMapper::RegisterNextImage(const Options& options,
   CHECK(options.Check());
 
   Image& image = reconstruction_->Image(image_id);
-  Camera& camera = reconstruction_->Camera(image.CameraId());
 
   CHECK(!image.IsRegistered()) << "Image cannot be registered multiple times";
 

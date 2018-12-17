@@ -58,10 +58,9 @@ void IterativeGlobalRefinement(const BatchMapperOptions& options,
         mapper->GetReconstruction().ComputeNumObservations();
     size_t num_changed_observations = 0;
     BundleAdjustmentOptions custom_options = options.GlobalBundleAdjustment();
-    const size_t num_reg_images = mapper->GetReconstruction().NumRegImages();
 
     PrintHeading1("Global bundle adjustment");
-    if (options.ba_global_use_pba && num_reg_images >= kMinNumRegImages &&
+    if (options.ba_global_use_pba &&
         ParallelBundleAdjuster::IsSupported(custom_options,
                                             mapper->GetReconstruction())) {
       mapper->AdjustParallelGlobalBundle(
@@ -133,7 +132,6 @@ BatchMapper::Options BatchMapperOptions::Mapper() const {
   options.max_focal_length_ratio = max_focal_length_ratio;
   options.max_extra_param = max_extra_param;
   options.num_threads = num_threads;
-  options.local_ba_num_images = ba_local_num_images;
   return options;
 }
 
@@ -168,6 +166,16 @@ BundleAdjustmentOptions BatchMapperOptions::GlobalBundleAdjustment()
   return options;
 }
 
+ParallelBundleAdjuster::Options
+BatchMapperOptions::ParallelGlobalBundleAdjustment() const {
+  ParallelBundleAdjuster::Options options;
+  options.max_num_iterations = ba_global_max_num_iterations;
+  options.print_summary = true;
+  options.gpu_index = ba_global_pba_gpu_index;
+  options.num_threads = num_threads;
+  return options;
+}
+
 bool BatchMapperOptions::Check() const {
   CHECK_OPTION_GT(min_num_matches, 0);
   CHECK_OPTION_GT(max_num_models, 0);
@@ -177,18 +185,9 @@ bool BatchMapperOptions::Check() const {
   CHECK_OPTION_GT(min_focal_length_ratio, 0);
   CHECK_OPTION_GT(max_focal_length_ratio, 0);
   CHECK_OPTION_GE(max_extra_param, 0);
-  CHECK_OPTION_GE(ba_local_num_images, 2);
-  CHECK_OPTION_GE(ba_local_max_num_iterations, 0);
-  CHECK_OPTION_GT(ba_global_images_ratio, 1.0);
-  CHECK_OPTION_GT(ba_global_points_ratio, 1.0);
-  CHECK_OPTION_GT(ba_global_images_freq, 0);
-  CHECK_OPTION_GT(ba_global_points_freq, 0);
   CHECK_OPTION_GT(ba_global_max_num_iterations, 0);
-  CHECK_OPTION_GT(ba_local_max_refinements, 0);
-  CHECK_OPTION_GE(ba_local_max_refinement_change, 0);
   CHECK_OPTION_GT(ba_global_max_refinements, 0);
   CHECK_OPTION_GE(ba_global_max_refinement_change, 0);
-  CHECK_OPTION_GE(snapshot_images_freq, 0);
   CHECK_OPTION(Mapper().Check());
   CHECK_OPTION(Triangulation().Check());
   return true;
@@ -271,7 +270,7 @@ void BatchMapperController::Reconstruct(
   // Register all images
   ////////////////////////////////////////////////////////////////////////////
 
-  EIGEN_STL_UMAP(image_t, class Image)& images_map = reconstruction.Images();
+  const EIGEN_STL_UMAP(image_t, class Image) images_map = reconstruction.Images();
   std::vector<image_t> image_ids;
   image_ids.reserve(images_map.size());
   for(const auto& key_val: images_map) { image_ids.push_back(key_val.first); }
