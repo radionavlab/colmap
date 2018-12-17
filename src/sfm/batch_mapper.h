@@ -95,12 +95,6 @@ class BatchMapper {
     // Whether to estimate the extra parameters in absolute pose estimation.
     bool abs_pose_refine_extra_params = true;
 
-    // Number of images to optimize in local bundle adjustment.
-    int local_ba_num_images = 6;
-
-    // Minimum triangulation for images to be chosen in local bundle adjustment.
-    double local_ba_min_tri_angle = 6;
-
     // Thresholds for bogus camera parameters. Images with bogus camera
     // parameters are filtered and ignored in triangulation.
     double min_focal_length_ratio = 0.1;  // Opening angle of ~130deg
@@ -120,13 +114,6 @@ class BatchMapper {
     int num_threads = -1;
 
     bool Check() const;
-  };
-
-  struct LocalBundleAdjustmentReport {
-    size_t num_merged_observations = 0;
-    size_t num_completed_observations = 0;
-    size_t num_filtered_observations = 0;
-    size_t num_adjusted_observations = 0;
   };
 
   // Create incremental mapper. The database cache must live for the entire
@@ -169,16 +156,6 @@ class BatchMapper {
   // the redundancy in subsequent bundle adjustments.
   size_t MergeTracks(const IncrementalTriangulator::Options& tri_options);
 
-  // Adjust locally connected images and points of a reference image. In
-  // addition, refine the provided 3D points. Only images connected to the
-  // reference image are optimized. If the provided 3D points are not locally
-  // connected to the reference image, their observing images are set as
-  // constant in the adjustment.
-  LocalBundleAdjustmentReport AdjustLocalBundle(
-      const Options& options, const BundleAdjustmentOptions& ba_options,
-      const IncrementalTriangulator::Options& tri_options,
-      const image_t image_id, const std::unordered_set<point3D_t>& point3D_ids);
-
   // Global bundle adjustment using Ceres Solver or PBA.
   bool AdjustGlobalBundle(const BundleAdjustmentOptions& ba_options);
   bool AdjustParallelGlobalBundle(
@@ -191,13 +168,6 @@ class BatchMapper {
 
   const Reconstruction& GetReconstruction() const;
 
-  // Number of images that are registered in at least on reconstruction.
-  size_t NumTotalRegImages() const;
-
-  // Number of shared images between current reconstruction and all other
-  // previous reconstructions.
-  size_t NumSharedRegImages() const;
-
   // Get changed 3D points, since the last call to `ClearModifiedPoints3D`.
   const std::unordered_set<point3D_t>& GetModifiedPoints3D();
 
@@ -205,21 +175,6 @@ class BatchMapper {
   void ClearModifiedPoints3D();
 
  private:
-  // Find local bundle for given image in the reconstruction. The local bundle
-  // is defined as the images that are most connected, i.e. maximum number of
-  // shared 3D points, to the given image.
-  std::vector<image_t> FindLocalBundle(const Options& options,
-                                       const image_t image_id) const;
-
-  // Register / De-register image in current reconstruction and update
-  // the number of shared images between all reconstructions.
-  void RegisterImageEvent(const image_t image_id);
-  void DeRegisterImageEvent(const image_t image_id);
-
-  bool EstimateInitialTwoViewGeometry(const Options& options,
-                                      const image_t image_id1,
-                                      const image_t image_id2);
-
   // Class that holds all necessary data from database in memory.
   const DatabaseCache* database_cache_;
 
@@ -229,37 +184,8 @@ class BatchMapper {
   // Class that is responsible for incremental triangulation.
   std::unique_ptr<IncrementalTriangulator> triangulator_;
 
-  // Number of images that are registered in at least on reconstruction.
-  size_t num_total_reg_images_;
-
-  // Number of shared images between current reconstruction and all other
-  // previous reconstructions.
-  size_t num_shared_reg_images_;
-
-  // Estimated two-view geometry of last call to `FindFirstInitialImage`,
-  // used as a cache for a subsequent call to `RegisterInitialImagePair`.
-  image_pair_t prev_init_image_pair_id_;
-  TwoViewGeometry prev_init_two_view_geometry_;
-
-  // Images and image pairs that have been used for initialization. Each image
-  // and image pair is only tried once for initialization.
-  std::unordered_map<image_t, size_t> init_num_reg_trials_;
-  std::unordered_set<image_pair_t> init_image_pairs_;
-
-  // Cameras whose parameters have been refined in pose refinement. Used
-  // to avoid duplicate refinement of camera parameters or degradation of
-  // already refined camera parameters when multiple images share intrinsics.
-  std::unordered_set<camera_t> refined_cameras_;
-
-  // The number of reconstructions in which images are registered.
-  std::unordered_map<image_t, size_t> num_registrations_;
-
   // Images that have been filtered in current reconstruction.
   std::unordered_set<image_t> filtered_images_;
-
-  // Number of trials to register image in current reconstruction. Used to set
-  // an upper bound to the number of trials to register an image.
-  std::unordered_map<image_t, size_t> num_reg_trials_;
 };
 
 }  // namespace colmap
