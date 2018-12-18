@@ -225,6 +225,7 @@ Image ReadImageRow(sqlite3_stmt* sql_stmt) {
   for (size_t i = 0; i < 4; ++i) {
     if (sqlite3_column_type(sql_stmt, i + 3) != SQLITE_NULL) {
       image.QvecPrior(i) = sqlite3_column_double(sql_stmt, i + 3);
+      image.Qvec(i) = image.QvecPrior(i); 
     }
   }
 
@@ -232,6 +233,7 @@ Image ReadImageRow(sqlite3_stmt* sql_stmt) {
   for (size_t i = 0; i < 3; ++i) {
     if (sqlite3_column_type(sql_stmt, i + 7) != SQLITE_NULL) {
       image.TvecPrior(i) = sqlite3_column_double(sql_stmt, i + 7);
+      image.Tvec(i) =image.TvecPrior(i); 
     }
   }
 

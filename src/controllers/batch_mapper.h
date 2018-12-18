@@ -47,24 +47,6 @@ struct BatchMapperOptions {
   // Whether to ignore the inlier matches of watermark image pairs.
   bool ignore_watermarks = false;
 
-  // Whether to reconstruct multiple sub-models.
-  bool multiple_models = false;
-
-  // The number of sub-models to reconstruct.
-  int max_num_models = 50;
-
-  // The maximum number of overlapping images between sub-models. If the
-  // current sub-models shares more than this number of images with another
-  // model, then the reconstruction is stopped.
-  int max_model_overlap = 20;
-
-  // The minimum number of registered images of a sub-model, otherwise the
-  // sub-model is discarded.
-  int min_model_size = 10;
-
-  // The number of trials to initialize the reconstruction.
-  int init_num_trials = 200;
-
   // Whether to extract colors for reconstructed points.
   bool extract_colors = true;
 
@@ -81,12 +63,6 @@ struct BatchMapperOptions {
   bool ba_refine_principal_point = false;
   bool ba_refine_extra_params = true;
 
-  // Whether to use PBA in global bundle adjustment.
-  bool ba_global_use_pba = true;
-
-  // The GPU index for PBA bundle adjustment.
-  int ba_global_pba_gpu_index = -1;
-
   // The maximum number of global bundle adjustment iterations.
   int ba_global_max_num_iterations = 5;
 
@@ -101,7 +77,6 @@ struct BatchMapperOptions {
   BatchMapper::Options Mapper() const;
   IncrementalTriangulator::Options Triangulation() const;
   BundleAdjustmentOptions GlobalBundleAdjustment() const;
-  ParallelBundleAdjuster::Options ParallelGlobalBundleAdjustment() const;
 
   bool Check() const;
 

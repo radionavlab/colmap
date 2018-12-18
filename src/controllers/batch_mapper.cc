@@ -60,14 +60,7 @@ void IterativeGlobalRefinement(const BatchMapperOptions& options,
     BundleAdjustmentOptions custom_options = options.GlobalBundleAdjustment();
 
     PrintHeading1("Global bundle adjustment");
-    if (options.ba_global_use_pba &&
-        ParallelBundleAdjuster::IsSupported(custom_options,
-                                            mapper->GetReconstruction())) {
-      mapper->AdjustParallelGlobalBundle(
-          custom_options, options.ParallelGlobalBundleAdjustment());
-    } else {
-      mapper->AdjustGlobalBundle(custom_options);
-    }
+    mapper->AdjustGlobalBundle(custom_options);
 
     num_changed_observations += CompleteAndMergeTracks(options, mapper);
     num_changed_observations += FilterPoints(options, mapper);
@@ -166,22 +159,8 @@ BundleAdjustmentOptions BatchMapperOptions::GlobalBundleAdjustment()
   return options;
 }
 
-ParallelBundleAdjuster::Options
-BatchMapperOptions::ParallelGlobalBundleAdjustment() const {
-  ParallelBundleAdjuster::Options options;
-  options.max_num_iterations = ba_global_max_num_iterations;
-  options.print_summary = true;
-  options.gpu_index = ba_global_pba_gpu_index;
-  options.num_threads = num_threads;
-  return options;
-}
-
 bool BatchMapperOptions::Check() const {
   CHECK_OPTION_GT(min_num_matches, 0);
-  CHECK_OPTION_GT(max_num_models, 0);
-  CHECK_OPTION_GT(max_model_overlap, 0);
-  CHECK_OPTION_GE(min_model_size, 0);
-  CHECK_OPTION_GT(init_num_trials, 0);
   CHECK_OPTION_GT(min_focal_length_ratio, 0);
   CHECK_OPTION_GT(max_focal_length_ratio, 0);
   CHECK_OPTION_GE(max_extra_param, 0);
@@ -275,12 +254,7 @@ void BatchMapperController::Reconstruct(
   image_ids.reserve(images_map.size());
   for(const auto& key_val: images_map) { image_ids.push_back(key_val.first); }
 
-  for(image_t next_image_id: image_ids) {
-    BlockIfPaused();
-    if (IsStopped()) {
-      break;
-    }
-
+  for(image_t& next_image_id: image_ids) {
     const Image& next_image = reconstruction.Image(next_image_id);
 
     PrintHeading1(StringPrintf("Registering image #%d (%d)", next_image_id,
@@ -302,7 +276,6 @@ void BatchMapperController::Reconstruct(
       }
 
       Callback(NEXT_IMAGE_REG_CALLBACK);
-      break;
     } else {
       std::cout << "  => Could not register, trying another image."
                 << std::endl;
@@ -319,7 +292,6 @@ void BatchMapperController::Reconstruct(
 
   const bool kDiscardReconstruction = false;
   mapper.EndReconstruction(kDiscardReconstruction); 
-  return;
 }
 
 }  // namespace colmap

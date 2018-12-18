@@ -1766,6 +1766,20 @@ int RunTransitiveMatcher(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
+int RunTucker(int argc, char** argv) {
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.Parse(argc, argv);
+
+  Database database(*options.database_path);
+
+  for(const auto& img: database.ReadAllImages()) {
+    std::cout << img.Tvec() << std::endl;
+  }
+
+  return EXIT_SUCCESS;
+}
+
 // Loads descriptors for training from the database. Loads all descriptors from
 // the database if max_num_images < 0, otherwise the descriptors of a random
 // subset of images are selected.
@@ -2096,6 +2110,7 @@ int main(int argc, char** argv) {
   commands.emplace_back("spatial_matcher", &RunSpatialMatcher);
   commands.emplace_back("stereo_fusion", &RunStereoFuser);
   commands.emplace_back("transitive_matcher", &RunTransitiveMatcher);
+  commands.emplace_back("tucker", &RunTucker);
   commands.emplace_back("vocab_tree_builder", &RunVocabTreeBuilder);
   commands.emplace_back("vocab_tree_matcher", &RunVocabTreeMatcher);
   commands.emplace_back("vocab_tree_retriever", &RunVocabTreeRetriever);

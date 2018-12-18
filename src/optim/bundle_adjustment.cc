@@ -388,7 +388,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   // Collect cameras for final parameterization.
   CHECK(image.HasCamera());
 
-  if (options_.priors) {
+  if (options_.using_priors) {
     const ceres::ResidualBlockId id = problem_->AddResidualBlock(
       CameraPositionENUCostFunction::Create(
         image.TvecPrior(),
@@ -419,7 +419,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 
     ceres::CostFunction* cost_function = nullptr;
 
-    if (constant_pose && !options_.priors) {
+    if (constant_pose) {
       switch (camera.ModelId()) {
 #define CAMERA_MODEL_CASE(CameraModel)                                 \
   case CameraModel::kModelId:                                          \
@@ -465,15 +465,8 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
 
   if (num_observations > 0) {
     camera_ids_.insert(image.CameraId());
-     
-    // Set pose parameterization.
-    // If using priors, all poses can be changed. Parameterize all quaternions.
-    if (options_.priors) {
-      ceres::LocalParameterization* quaternion_parameterization =
-          new ceres::QuaternionParameterization;
-      problem_->SetParameterization(qvec_data, quaternion_parameterization);
-    }
-    else if (!constant_pose) {
+   
+    if (!constant_pose) {
       ceres::LocalParameterization* quaternion_parameterization =
           new ceres::QuaternionParameterization;
       problem_->SetParameterization(qvec_data, quaternion_parameterization);

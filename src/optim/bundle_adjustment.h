@@ -73,7 +73,7 @@ struct BundleAdjustmentOptions {
   CovarianceOptions cov;
   
   // Whether to use priors or not
-  bool priors = false;
+  bool using_priors = false;
 
   // Whether to refine the extrinsic parameter group.
   bool refine_extrinsics = true;

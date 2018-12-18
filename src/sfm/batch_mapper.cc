@@ -41,38 +41,6 @@
 #include "util/misc.h"
 
 namespace colmap {
-namespace {
-
-void SortAndAppendNextImages(std::vector<std::pair<image_t, float>> image_ranks,
-                             std::vector<image_t>* sorted_images_ids) {
-  std::sort(image_ranks.begin(), image_ranks.end(),
-            [](const std::pair<image_t, float>& image1,
-               const std::pair<image_t, float>& image2) {
-              return image1.second > image2.second;
-            });
-
-  sorted_images_ids->reserve(sorted_images_ids->size() + image_ranks.size());
-  for (const auto& image : image_ranks) {
-    sorted_images_ids->push_back(image.first);
-  }
-
-  image_ranks.clear();
-}
-
-float RankNextImageMaxVisiblePointsNum(const Image& image) {
-  return static_cast<float>(image.NumVisiblePoints3D());
-}
-
-float RankNextImageMaxVisiblePointsRatio(const Image& image) {
-  return static_cast<float>(image.NumVisiblePoints3D()) /
-         static_cast<float>(image.NumObservations());
-}
-
-float RankNextImageMinUncertainty(const Image& image) {
-  return static_cast<float>(image.Point3DVisibilityScore());
-}
-
-}  // namespace
 
 bool BatchMapper::Options::Check() const {
   CHECK_OPTION_GT(init_min_num_inliers, 0);
@@ -183,35 +151,6 @@ bool BatchMapper::AdjustGlobalBundle(
 
   // Run bundle adjustment.
   BundleAdjuster bundle_adjuster(ba_options, ba_config);
-  if (!bundle_adjuster.Solve(reconstruction_)) {
-    return false;
-  }
-
-  return true;
-}
-
-bool BatchMapper::AdjustParallelGlobalBundle(
-    const BundleAdjustmentOptions& ba_options,
-    const ParallelBundleAdjuster::Options& parallel_ba_options) {
-  CHECK_NOTNULL(reconstruction_);
-
-  const std::vector<image_t>& reg_image_ids = reconstruction_->RegImageIds();
-
-  CHECK_GE(reg_image_ids.size(), 2)
-      << "At least two images must be registered for global bundle-adjustment";
-
-  // Avoid degeneracies in bundle adjustment.
-  reconstruction_->FilterObservationsWithNegativeDepth();
-
-  // Configure bundle adjustment.
-  BundleAdjustmentConfig ba_config;
-  for (const image_t image_id : reg_image_ids) {
-    ba_config.AddImage(image_id);
-  }
-
-  // Run bundle adjustment.
-  ParallelBundleAdjuster bundle_adjuster(parallel_ba_options, ba_options,
-                                         ba_config);
   if (!bundle_adjuster.Solve(reconstruction_)) {
     return false;
   }

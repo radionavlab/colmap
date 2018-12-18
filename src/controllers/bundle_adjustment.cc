@@ -91,7 +91,7 @@ void BundleAdjustmentController::Run() {
   for (const image_t image_id : reg_image_ids) {
     ba_config.AddImage(image_id);
   }
-  if(!ba_options.priors) {
+  if(!ba_options.using_priors) {
     ba_config.SetConstantPose(reg_image_ids[0]);
     ba_config.SetConstantTvec(reg_image_ids[1], {0});
   }

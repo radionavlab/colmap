@@ -41,26 +41,6 @@
 
 namespace colmap {
 
-// Class that provides all functionality for the incremental reconstruction
-// procedure. Example usage:
-//
-//  IncrementalMapper mapper(&database_cache);
-//  mapper.BeginReconstruction(&reconstruction);
-//  CHECK(mapper.FindInitialImagePair(options, image_id1, image_id2));
-//  CHECK(mapper.RegisterInitialImagePair(options, image_id1, image_id2));
-//  while (...) {
-//    const auto next_image_ids = mapper.FindNextImages(options);
-//    for (const auto image_id : next_image_ids) {
-//      CHECK(mapper.RegisterNextImage(options, image_id));
-//      if (...) {
-//        mapper.AdjustLocalBundle(...);
-//      } else {
-//        mapper.AdjustGlobalBundle(...);
-//      }
-//    }
-//  }
-//  mapper.EndReconstruction(false);
-//
 class BatchMapper {
  public:
   struct Options {
@@ -116,13 +96,12 @@ class BatchMapper {
     bool Check() const;
   };
 
-  // Create incremental mapper. The database cache must live for the entire
+  // Create batch mapper. The database cache must live for the entire
   // life-time of the incremental mapper.
   explicit BatchMapper(const DatabaseCache* database_cache);
 
   // Prepare the mapper for a new reconstruction, which might have existing
-  // registered images (in which case `RegisterNextImage` must be called) or
-  // which is empty (in which case `RegisterInitialImagePair` must be called).
+  // registered images (in which case `RegisterNextImage` must be called)
   void BeginReconstruction(Reconstruction* reconstruction);
 
   // Cleanup the mapper after the current reconstruction is done. If the
@@ -130,8 +109,7 @@ class BatchMapper {
   // be updated accordingly.
   void EndReconstruction(const bool discard);
 
-  // Attempt to register image to the existing model. This requires that
-  // a previous call to `RegisterInitialImagePair` was successful.
+  // Attempt to register image to the existing model.
   bool RegisterNextImage(const Options& options, const image_t image_id);
 
   // Triangulate observations of image.
@@ -156,11 +134,8 @@ class BatchMapper {
   // the redundancy in subsequent bundle adjustments.
   size_t MergeTracks(const IncrementalTriangulator::Options& tri_options);
 
-  // Global bundle adjustment using Ceres Solver or PBA.
+  // Global bundle adjustment using Ceres Solver.
   bool AdjustGlobalBundle(const BundleAdjustmentOptions& ba_options);
-  bool AdjustParallelGlobalBundle(
-      const BundleAdjustmentOptions& ba_options,
-      const ParallelBundleAdjuster::Options& parallel_ba_options);
 
   // Filter images and point observations.
   size_t FilterImages(const Options& options);
