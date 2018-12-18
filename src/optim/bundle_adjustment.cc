@@ -389,10 +389,20 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   CHECK(image.HasCamera());
 
   if (options_.using_priors) {
+    // const ceres::ResidualBlockId id = problem_->AddResidualBlock(
+    //   CameraPositionENUCostFunction::Create(
+    //     image.TvecPrior(),
+    //     image.CovariancePrior().bottomRightCorner<3,3>()
+    //   ), 
+    //   NULL /* loss function */, 
+    //   tvec_data,
+    //   qvec_data
+    // );
     const ceres::ResidualBlockId id = problem_->AddResidualBlock(
-      CameraPositionENUCostFunction::Create(
+      CameraPoseCostFunction::Create(
         image.TvecPrior(),
-        image.CovariancePrior().bottomRightCorner<3,3>()
+        image.QvecPrior(),
+        image.CovariancePrior()
       ), 
       NULL /* loss function */, 
       tvec_data,

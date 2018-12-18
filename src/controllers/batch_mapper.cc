@@ -53,11 +53,22 @@ void IterativeGlobalRefinement(const BatchMapperOptions& options,
   std::cout << "  => Retriangulated observations: "
             << mapper->Retriangulate(options.Triangulation()) << std::endl;
 
+
   for (int i = 0; i < options.ba_global_max_refinements; ++i) {
     const size_t num_observations =
         mapper->GetReconstruction().ComputeNumObservations();
     size_t num_changed_observations = 0;
     BundleAdjustmentOptions custom_options = options.GlobalBundleAdjustment();
+
+    // Configure options
+    custom_options.using_priors = true;
+    if(i < 2) {
+      custom_options.loss_function_type = 
+        BundleAdjustmentOptions::LossFunctionType::SOFT_L1;
+    } else {
+      custom_options.loss_function_type = 
+        BundleAdjustmentOptions::LossFunctionType::TRIVIAL;
+    }
 
     PrintHeading1("Global bundle adjustment");
     mapper->AdjustGlobalBundle(custom_options);
@@ -244,6 +255,23 @@ void BatchMapperController::Reconstruct(
       reconstruction_manager_->Get(reconstruction_idx);
 
   mapper.BeginReconstruction(&reconstruction);
+
+	// TODO HACKING
+  const camera_t camera_id = 1;
+  const size_t width = 3840;
+  const size_t height = 2160;
+  const std::string params = "1662.07,1920,1080,-0.021983";
+
+  Camera& cam = reconstruction.Camera(camera_id);
+  cam.SetWidth(width);
+  cam.SetHeight(height);
+  cam.SetParamsFromString(params);
+
+  if(!cam.VerifyParams()) {
+    std::cerr << "Camera params wrong!" << std::endl;
+    return;
+  }
+	// END TODO HACKING
 
   ///////////////////////////////////////////////////////////////////////////
   // Register all images

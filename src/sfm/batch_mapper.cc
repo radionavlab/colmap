@@ -94,12 +94,6 @@ bool BatchMapper::RegisterNextImage(const Options& options,
 
   CHECK(!image.IsRegistered()) << "Image cannot be registered multiple times";
 
-  // Check if enough 2D-3D correspondences.
-  if (image.NumVisiblePoints3D() <
-      static_cast<size_t>(options.abs_pose_min_num_inliers)) {
-    return false;
-  }
-
   reconstruction_->RegisterImage(image_id);
 
   return true;

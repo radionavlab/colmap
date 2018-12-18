@@ -64,10 +64,10 @@ struct BatchMapperOptions {
   bool ba_refine_extra_params = true;
 
   // The maximum number of global bundle adjustment iterations.
-  int ba_global_max_num_iterations = 5;
+  int ba_global_max_num_iterations = 100;
 
   // The thresholds for iterative bundle adjustment refinements.
-  int ba_global_max_refinements = 5;
+  int ba_global_max_refinements = 10;
   double ba_global_max_refinement_change = 0.0005;
 
   // Which images to reconstruct. If no images are specified, all images will

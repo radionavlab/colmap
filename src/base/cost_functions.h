@@ -123,21 +123,18 @@ class CameraPoseCostFunction {
                                      const Eigen::Vector4d& qvec,
                                      const Eigen::Matrix<double, 6, 6>& cov) {
     return (new ceres::AutoDiffCostFunction<
-            CameraPoseCostFunction, 3, 3>(
+            CameraPoseCostFunction, 6, 3, 4>(
         new CameraPoseCostFunction(tvec, qvec, cov)));
   }
 
   template <typename T>
   bool operator()(const T* const tvec, 
+                  const T* const qvec,
                   T* residuals) const {
-
-    // typedef Eigen::Matrix<T, 3, 1> tvec_t;
-    // typedef Eigen::Matrix<T, 6, 6> cov_t;
-
-    // // Measurements
-    // const tvec_t tvec_meas = t_.cast<T>();
-    // // Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
-    // // Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
+    // Measurements
+    // const Eigen::Vector<T, 3, 1> tvec_meas = t_.cast<T>();
+    // Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
+    // Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
 
     // // Square root of information matrix
     // const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
@@ -154,9 +151,12 @@ class CameraPoseCostFunction {
     // tvec_t res = sqrt_info * tvec_res; 
 
     // // Output
-    // residuals[0] = res(0);
-    // residuals[1] = res(1);
-    // residuals[2] = res(2);
+    residuals[0] = (tvec[0] - T(t_(0))) / T(0.01);
+    residuals[1] = (tvec[1] - T(t_(1))) / T(0.01);
+    residuals[2] = (tvec[2] - T(t_(2))) / T(0.01);
+    residuals[3] = T(0);
+    residuals[4] = T(0);
+    residuals[5] = T(0);
 
     return true;
   }
