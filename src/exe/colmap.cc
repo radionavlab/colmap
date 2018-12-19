@@ -236,6 +236,38 @@ int RunBundleAdjuster(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
+int RunCameraLocator(int argc, char** argv) {
+  std::string input_path;
+  std::string output_path;
+  std::string image_list_path;
+
+  OptionManager options;
+  options.AddRequiredOption("input_path", &input_path);
+  options.AddRequiredOption("output_path", &output_path);
+  options.AddDefaultOption("image_list_path", &image_list_path);
+  options.AddBundleAdjustmentOptions();
+  options.Parse(argc, argv);
+
+  if (!image_list_path.empty()) {
+    reader_options.image_list = ReadTextFileLines(image_list_path);
+    if (reader_options.image_list.empty()) {
+      return EXIT_SUCCESS;
+    }
+  }
+
+  Reconstruction reconstruction;
+  reconstruction.Read(input_path);
+  // options.
+
+  BundleAdjustmentController ba_controller(options, &reconstruction);
+  ba_controller.Start();
+  ba_controller.Wait();
+
+  reconstruction.Write(output_path);
+
+  return EXIT_SUCCESS;
+}
+
 int RunColorExtractor(int argc, char** argv) {
   std::string input_path;
   std::string output_path;
@@ -2056,6 +2088,7 @@ int main(int argc, char** argv) {
   commands.emplace_back("automatic_reconstructor", &RunAutomaticReconstructor);
   commands.emplace_back("batch_mapper", &RunBatchMapper);
   commands.emplace_back("bundle_adjuster", &RunBundleAdjuster);
+  commands.emplace_back("camera_locator", &RunCameraLocator);
   commands.emplace_back("color_extractor", &RunColorExtractor);
   commands.emplace_back("covariance_evaluator", &RunCovarianceEvaluator);
   commands.emplace_back("database_creator", &RunDatabaseCreator);
