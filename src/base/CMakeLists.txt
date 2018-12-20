@@ -53,6 +53,7 @@ COLMAP_ADD_SOURCES(
     projection.h projection.cc
     reconstruction.h reconstruction.cc
     reconstruction_manager.h reconstruction_manager.cc
+    roi.h
     scene_clustering.h scene_clustering.cc
     similarity_transform.h similarity_transform.cc
     track.h track.cc

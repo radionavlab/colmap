@@ -34,6 +34,7 @@
 #include <ceres/ceres.h>
 
 #include "optim/bundle_adjustment.h"
+#include "base/roi.h"
 #include "util/misc.h"
 
 namespace colmap {
@@ -84,6 +85,43 @@ void CovarianceEvaluatorController::Run() {
   ba_options.solver_options.minimizer_progress_to_stdout = true;
   ba_options.cov.compute = true;
   ba_options.using_priors = true;
+
+  // TODO HACKING
+  double MIN_X=-1, MAX_X=2;
+  double MIN_Y=0,  MAX_Y=2;
+  double MIN_Z=0,  MAX_Z=2;
+
+  PolyhedronFace f1; f1.points_ = {
+    Eigen::Vector3d(MIN_X, MIN_Y, MIN_Z),
+    Eigen::Vector3d(MAX_X, MIN_Y, MIN_Z),
+    Eigen::Vector3d(MAX_X, MIN_Y, MAX_Z),
+    Eigen::Vector3d(MIN_X, MIN_Y, MAX_Z),
+  };
+
+  PolyhedronFace f2; f2.points_ = {
+    Eigen::Vector3d(MAX_X, MAX_Y, MIN_Z),
+    Eigen::Vector3d(MIN_X, MAX_Y, MIN_Z),
+    Eigen::Vector3d(MIN_X, MAX_Y, MAX_Z),
+    Eigen::Vector3d(MAX_X, MAX_Y, MAX_Z),
+  };
+
+  PolyhedronFace f3; f3.points_ = {
+    Eigen::Vector3d(MAX_X, MIN_Y, MIN_Z),
+    Eigen::Vector3d(MAX_X, MAX_Y, MIN_Z),
+    Eigen::Vector3d(MAX_X, MAX_Y, MAX_Z),
+    Eigen::Vector3d(MAX_X, MIN_Y, MAX_Z),
+  };
+
+  PolyhedronFace f4; f4.points_ = {
+    Eigen::Vector3d(MIN_X, MAX_Y, MIN_Z),
+    Eigen::Vector3d(MIN_X, MIN_Y, MIN_Z),
+    Eigen::Vector3d(MIN_X, MIN_Y, MAX_Z),
+    Eigen::Vector3d(MIN_X, MAX_Y, MAX_Z),
+  };
+
+
+  ba_options.cov.ROI.faces_ = {f1, f2, f3, f4};
+  // END TODO HACKING
 
   BundleAdjustmentIterationCallback iteration_callback(this);
   ba_options.solver_options.callbacks.push_back(&iteration_callback);

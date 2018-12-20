@@ -41,6 +41,7 @@
 
 #include "base/camera_rig.h"
 #include "base/reconstruction.h"
+#include "base/roi.h"
 #include "PBA/pba.h"
 #include "util/alignment.h"
 
@@ -68,6 +69,7 @@ struct BundleAdjustmentOptions {
     // Whether to evalutate covariance or not. If evaluating covariance, all
     // parameters will be held constant.
     bool compute = false;
+    Polyhedron ROI;
   } CovarianceOptions;
 
   // Whether to compute covariance of 3D points
