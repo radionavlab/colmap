@@ -41,82 +41,14 @@
 
 namespace colmap {
 
-// Cost function to estimate camera pose given a measurement of its pose in the
-// ENU frame
-class CameraPositionENUCostFunction {
- public:
-  CameraPositionENUCostFunction(const Eigen::Vector3d& ricI,
-                                const Eigen::Matrix3d& cov)
-      : ricI_(ricI),
-        cov_(cov)
-    {}
-
-  static ceres::CostFunction* Create(const Eigen::Vector3d& ricI,
-                                     const Eigen::Matrix3d& cov) {
-    return (new ceres::AutoDiffCostFunction<
-            CameraPositionENUCostFunction, 3, 3, 4>(
-        new CameraPositionENUCostFunction(ricI, cov)));
-  }
-
-  template <typename T>
-  bool operator()(const T* rciC, 
-                  const T* qic,
-                  T* residuals) const {
-
-    typedef Eigen::Matrix<T, 3, 1> tvec_t;
-    typedef Eigen::Matrix<T, 3, 3> cov_t;
-
-    // Measurements
-    const tvec_t ricI_meas = ricI_.cast<T>();
-    // const Eigen::Matrix3d cov = Eigen::Vector3d(0.0025, 0.0025, 0.0025).asDiagonal();
-
-    // Square root of information matrix
-    const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
-    const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
-    const cov_t sqrt_info = lower.inverse().cast<T>();
-
-    // Estimates
-    T ricI[3];
-    T R_IFC[4]; 
-    T D_I2C[4]; 
-
-    std::memcpy(R_IFC, qic, 4*sizeof(T));
-    std::memcpy(D_I2C, R_IFC, 4*sizeof(T));
-
-    const T D_C2I[4] = { T(-1)*D_I2C[0], D_I2C[1], D_I2C[2], D_I2C[3] };
-    const T ricC[3] = { T(-1)*rciC[0], T(-1)*rciC[1], T(-1)*rciC[2] };
-
-    ceres::UnitQuaternionRotatePoint(D_C2I, ricC, ricI);
-
-    tvec_t ricI_est(ricI[0], ricI[1], ricI[2]);
-
-    // tvec residual
-    const tvec_t ricI_res = ricI_est - ricI_meas;
-
-    // Scale by square root info
-    tvec_t res = sqrt_info * ricI_res; 
-
-    // Output
-    residuals[0] = res(0);
-    residuals[1] = res(1);
-    residuals[2] = res(2);
-
-    return true;
-  }
-
- private:
-  const Eigen::Vector3d ricI_;
-  const Eigen::Matrix3d cov_;
-};
-
 class CameraPoseCostFunction {
  public:
   CameraPoseCostFunction(const Eigen::Vector3d& tvec,
                          const Eigen::Vector4d& qvec,
                          const Eigen::Matrix<double, 6, 6>& cov)
-      : t_(tvec),
-        q_(qvec),
-        cov_(cov) 
+      : tvec_meas(tvec),
+        qvec_meas(qvec),
+        cov_meas(cov) 
     {}
 
   static ceres::CostFunction* Create(const Eigen::Vector3d& tvec,
@@ -128,43 +60,67 @@ class CameraPoseCostFunction {
   }
 
   template <typename T>
-  bool operator()(const T* const tvec, 
-                  const T* const qvec,
+  bool operator()(const T* const tvec_est, 
+                  const T* const qvec_est,
                   T* residuals) const {
-    // Measurements
-    // const Eigen::Vector<T, 3, 1> tvec_meas = t_.cast<T>();
-    // Eigen::Matrix3d R = QuaternionToRotationMatrix(q_);
-    // Eigen::Matrix3d cov = R.transpose() * Eigen::Vector3d(0.0004, 0.0004, 0.0004).asDiagonal() * R;
 
-    // // Square root of information matrix
-    // const Eigen::LLT<Eigen::Matrix<double, 3, 3> > chol(cov_);
-    // const Eigen::Matrix<double, 3, 3> lower = chol.matrixL();
-    // const cov_t sqrt_info = lower.inverse().cast<T>();
+    // Cast to eigen
+    Eigen::Quaternion<T> qvec_est_eigen;
+    qvec_est_eigen.w() = qvec_est[0];
+    qvec_est_eigen.x() = qvec_est[1];
+    qvec_est_eigen.y() = qvec_est[2];
+    qvec_est_eigen.z() = qvec_est[3];
 
-    // // Estimates
-    // tvec_t tvec_est(tvec[0], tvec[1], tvec[2]);
+    Eigen::Quaternion<T> qvec_meas_eigen;
+    qvec_meas_eigen.w() = T(qvec_meas(0));
+    qvec_meas_eigen.x() = T(qvec_meas(1));
+    qvec_meas_eigen.y() = T(qvec_meas(2));
+    qvec_meas_eigen.z() = T(qvec_meas(3));
 
-    // // tvec residual
-    // const tvec_t tvec_res = tvec_est - tvec_meas;
+    Eigen::Matrix<T, 3, 1> tvec_est_eigen;
+    tvec_est_eigen(0) = tvec_est[0];
+    tvec_est_eigen(1) = tvec_est[1];
+    tvec_est_eigen(2) = tvec_est[2];
 
-    // // Scale by square root info
-    // tvec_t res = sqrt_info * tvec_res; 
+    Eigen::Matrix<T, 3,1 > tvec_meas_eigen = tvec_meas.cast<T>();
 
-    // // Output
-    residuals[0] = (tvec[0] - T(t_(0))) / T(0.01);
-    residuals[1] = (tvec[1] - T(t_(1))) / T(0.01);
-    residuals[2] = (tvec[2] - T(t_(2))) / T(0.01);
-    residuals[3] = T(0);
-    residuals[4] = T(0);
-    residuals[5] = T(0);
+    // Square root of information matrix
+    const Eigen::LLT<Eigen::Matrix<double, 6, 6> > chol(cov_meas);
+    const Eigen::Matrix<double, 6, 6> lower = chol.matrixL();
+    const Eigen::Matrix<T, 6, 6> sqrt_info = lower.inverse().cast<T>();
+
+    // Differences
+    Eigen::Matrix<T, 3, 1> tdiff = tvec_est_eigen - tvec_meas_eigen;
+    Eigen::Quaternion<T> qdiff = qvec_est_eigen.inverse() * qvec_meas_eigen;
+    Eigen::Matrix<T, 3, 1> ediff;
+    ediff(0) = T(2) * qdiff.x();
+    ediff(1) = T(2) * qdiff.y();
+    ediff(2) = T(2) * qdiff.z();
+
+    Eigen::Matrix<T, 6, 1> diff;
+    diff(0) = tdiff(0);
+    diff(1) = tdiff(1);
+    diff(2) = tdiff(2);
+    diff(3) = ediff(0);
+    diff(4) = ediff(1);
+    diff(5) = ediff(2);    
+
+    // Residuals
+    Eigen::Matrix<T, 6, 1> res = sqrt_info * diff;
+    residuals[0] = res(0);
+    residuals[1] = res(1);
+    residuals[2] = res(2);
+    residuals[3] = res(3);
+    residuals[4] = res(4);
+    residuals[5] = res(5);
 
     return true;
   }
 
  private:
-  const Eigen::Vector3d t_;
-  const Eigen::Vector4d q_;
-  const Eigen::Matrix<double, 6, 6> cov_;
+  const Eigen::Vector3d tvec_meas;
+  const Eigen::Vector4d qvec_meas;
+  const Eigen::Matrix<double, 6, 6> cov_meas;
 };
 
 // Standard bundle adjustment cost function for variable

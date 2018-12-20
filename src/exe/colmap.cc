@@ -41,6 +41,7 @@
 #include "controllers/bundle_adjustment.h"
 #include "controllers/hierarchical_mapper.h"
 #include "controllers/batch_mapper.h"
+#include "controllers/covariance_evaluator.h"
 #include "estimators/coordinate_frame.h"
 #include "feature/extraction.h"
 #include "feature/matching.h"
@@ -237,33 +238,33 @@ int RunBundleAdjuster(int argc, char** argv) {
 }
 
 int RunCameraLocator(int argc, char** argv) {
-  std::string input_path;
-  std::string output_path;
-  std::string image_list_path;
+  // std::string input_path;
+  // std::string output_path;
+  // std::string image_list_path;
 
-  OptionManager options;
-  options.AddRequiredOption("input_path", &input_path);
-  options.AddRequiredOption("output_path", &output_path);
-  options.AddDefaultOption("image_list_path", &image_list_path);
-  options.AddBundleAdjustmentOptions();
-  options.Parse(argc, argv);
+  // OptionManager options;
+  // options.AddRequiredOption("input_path", &input_path);
+  // options.AddRequiredOption("output_path", &output_path);
+  // options.AddDefaultOption("image_list_path", &image_list_path);
+  // options.AddBundleAdjustmentOptions();
+  // options.Parse(argc, argv);
 
-  if (!image_list_path.empty()) {
-    reader_options.image_list = ReadTextFileLines(image_list_path);
-    if (reader_options.image_list.empty()) {
-      return EXIT_SUCCESS;
-    }
-  }
+  // if (!image_list_path.empty()) {
+  //   reader_options.image_list = ReadTextFileLines(image_list_path);
+  //   if (reader_options.image_list.empty()) {
+  //     return EXIT_SUCCESS;
+  //   }
+  // }
 
-  Reconstruction reconstruction;
-  reconstruction.Read(input_path);
-  // options.
+  // Reconstruction reconstruction;
+  // reconstruction.Read(input_path);
+  // // options.
 
-  BundleAdjustmentController ba_controller(options, &reconstruction);
-  ba_controller.Start();
-  ba_controller.Wait();
+  // BundleAdjustmentController ba_controller(options, &reconstruction);
+  // ba_controller.Start();
+  // ba_controller.Wait();
 
-  reconstruction.Write(output_path);
+  // reconstruction.Write(output_path);
 
   return EXIT_SUCCESS;
 }
@@ -293,12 +294,14 @@ int RunCovarianceEvaluator(int argc, char** argv) {
 
   OptionManager options;
   options.AddDatabaseOptions();
-  options.AddImageOptions();
-  options.AddDefaultOption("input_path", &input_path);
+  options.AddRequiredOption("input_path", &input_path);
   options.AddRequiredOption("output_path", &output_path);
-  options.AddBundleAdjustmentOptions();
-  options.AddMapperOptions();
   options.Parse(argc, argv);
+
+  if (!ExistsDir(input_path)) {
+    std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
 
   if (!ExistsDir(output_path)) {
     std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
@@ -317,8 +320,7 @@ int RunCovarianceEvaluator(int argc, char** argv) {
     reconstruction_idx = reconstruction_manager.Read(input_path);
   }
 
-  // Load the database.
-  // Contains the priors.
+  // Load priors from database
   Database db(*options.database_path);
   std::vector<Image> db_imgs = db.ReadAllImages();
   for(const Image& db_img: db_imgs) {
@@ -330,28 +332,17 @@ int RunCovarianceEvaluator(int argc, char** argv) {
     reconstruction_img.SetCovariancePrior(db_img.CovariancePrior());
   }
 
-  // BundleAdjustmentOptions::CovarianceOptions cov_options;
-  // cov_options.compute = true;
+  // Set options
+  OptionManager options_(options);
 
-  // OptionManager options_(options);
-  // options_.bundle_adjustment->priors = true;
-  // options_.bundle_adjustment->cov = cov_options;
-  // options_.bundle_adjustment->solver_options.max_num_iterations = 100;
+  // Run BA with covariance
+  CovarianceEvaluatorController cov_controller(options_, &reconstruction_manager.Get(0));
+  cov_controller.Start();
+  cov_controller.Wait(); 
 
-  // BundleAdjustmentController ba_controller(options_, &reconstruction);
-  // ba_controller.Start();
-  // ba_controller.Wait(); 
-
-  // Save output
-  // In case the reconstruction is continued from an existing reconstruction, do
-  // not create sub-folders but directly write the results.
-  // if (input_path != "" && reconstruction_manager.Size() > 0) {
-  //   reconstruction_manager.Get(0).Write(output_path);
-  //   std::cout << "Saving output..." << std::endl;
-  //   reconstruction.Write(export_path);
-  //   reconstruction.WriteText(export_path);
-  //   // reconstruction.ExportPLY(export_path + "/model.ply");
-  // }
+  // Write outout
+  reconstruction_manager.Get(0).Write(output_path);
+  reconstruction_manager.Get(0).WriteText(output_path);
   
   std::cout << "Success!" << std::endl;
   return EXIT_SUCCESS;

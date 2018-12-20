@@ -51,11 +51,6 @@ struct BundleAdjustmentOptions {
   enum class LossFunctionType { TRIVIAL, SOFT_L1, CAUCHY };
   LossFunctionType loss_function_type = LossFunctionType::TRIVIAL;
 
-  // Covariance options. 
-  typedef struct {
-    bool compute = false;
-  } CovarianceOptions;
-
   // Scaling factor determines residual at which robustification takes place.
   double loss_function_scale = 1.0;
 
@@ -68,8 +63,14 @@ struct BundleAdjustmentOptions {
   // Whether to refine the extra parameter group.
   bool refine_extra_params = true;
 
+  // Covariance options. 
+  typedef struct {
+    // Whether to evalutate covariance or not. If evaluating covariance, all
+    // parameters will be held constant.
+    bool compute = false;
+  } CovarianceOptions;
+
   // Whether to compute covariance of 3D points
-  // bool compute_covariance = false;
   CovarianceOptions cov;
   
   // Whether to use priors or not
@@ -182,9 +183,6 @@ class BundleAdjuster {
 
   bool Solve(Reconstruction* reconstruction);
 
-  // Prints the current cost of the various residual blocks
-  void PrintCurrentCost() const;
-
   // Get the Ceres solver summary for the last call to `Solve`.
   const ceres::Solver::Summary& Summary() const;
 
@@ -203,6 +201,7 @@ class BundleAdjuster {
  protected:
   void ParameterizeCameras(Reconstruction* reconstruction);
   void ParameterizePoints(Reconstruction* reconstruction);
+  void ParameterizeImages(Reconstruction* reconstruction);
 
   const BundleAdjustmentOptions options_;
   BundleAdjustmentConfig config_;
@@ -211,7 +210,7 @@ class BundleAdjuster {
   std::unordered_set<camera_t> camera_ids_;
   std::unordered_map<point3D_t, size_t> point3D_num_observations_;
   std::vector<ceres::ResidualBlockId> reprojection_ids_;
-  std::vector<ceres::ResidualBlockId> gps_residual_ids_;
+  std::vector<ceres::ResidualBlockId> priors_ids_;
 };
 
 // Bundle adjustment using PBA (GPU or CPU). Less flexible and accurate than

@@ -389,15 +389,6 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
   CHECK(image.HasCamera());
 
   if (options_.using_priors) {
-    // const ceres::ResidualBlockId id = problem_->AddResidualBlock(
-    //   CameraPositionENUCostFunction::Create(
-    //     image.TvecPrior(),
-    //     image.CovariancePrior().bottomRightCorner<3,3>()
-    //   ), 
-    //   NULL /* loss function */, 
-    //   tvec_data,
-    //   qvec_data
-    // );
     const ceres::ResidualBlockId id = problem_->AddResidualBlock(
       CameraPoseCostFunction::Create(
         image.TvecPrior(),
@@ -408,7 +399,7 @@ void BundleAdjuster::AddImageToProblem(const image_t image_id,
       tvec_data,
       qvec_data
     );
-    gps_residual_ids_.push_back(id);
+    priors_ids_.push_back(id);
   }
 
   const bool constant_pose =
@@ -589,7 +580,8 @@ void BundleAdjuster::ParameterizeCameras(Reconstruction* reconstruction) {
 void BundleAdjuster::ParameterizePoints(Reconstruction* reconstruction) {
   for (const auto elem : point3D_num_observations_) {
     Point3D& point3D = reconstruction->Point3D(elem.first);
-    if (point3D.Track().Length() > elem.second) {
+    const bool constant_point = point3D.Track().Length() > elem.second;
+    if (constant_point) {
       problem_->SetParameterBlockConstant(point3D.XYZ().data());
     }
   }
@@ -1203,32 +1195,6 @@ void RigBundleAdjuster::ParameterizeCameraRigs(Reconstruction* reconstruction) {
         new ceres::QuaternionParameterization;
     problem_->SetParameterization(qvec_data, quaternion_parameterization);
   }
-}
-
-void BundleAdjuster::PrintCurrentCost() const {
-
-  std::cout << "=======================================================================" << std::endl;
-  {
-    ceres::Problem::EvaluateOptions options;
-    options.residual_blocks = reprojection_ids_;
-    double total_cost = 0.0;
-    std::vector<double> residuals;
-    problem_->Evaluate(options, &total_cost, &residuals, nullptr, nullptr);
-    std::cout << "Reprojection Cost: " << total_cost << std::endl;
-    // std::for_each(residuals.begin(), residuals.end(), [](const double& n){ std::cout << n << std::endl; });
-  }
-
-  {
-    ceres::Problem::EvaluateOptions options;
-    options.residual_blocks = gps_residual_ids_;
-    double total_cost = 0.0;
-    std::vector<double> residuals;
-    problem_->Evaluate(options, &total_cost, &residuals, nullptr, nullptr);
-    std::cout << "GPS Cost:          " << total_cost << std::endl;
-    // std::for_each(residuals.begin(), residuals.end(), [](const double& n){ std::cout << n << std::endl; });
-  }
-    std::cout << "=======================================================================" << std::endl;
-    std::cout << std::endl;
 }
 
 void PrintSolverSummary(const ceres::Solver::Summary& summary) {
