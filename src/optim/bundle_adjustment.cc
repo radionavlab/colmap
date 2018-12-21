@@ -328,6 +328,13 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
                   std::to_string(covariance_blocks.size()) + " points");
     CHECK(covariance.Compute(covariance_blocks, problem_.get()));
 
+    // Zero-out covariance
+    for(const auto& point3D_kv : reconstruction->Points3D()) {
+      Point3D& point3D = reconstruction->Point3D(point3D_kv.first);
+      point3D.SetCovariance(Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Zero());
+    }
+
+
     // Extract covariance
     for(const auto& point3D_id : point3D_ids) {
       Point3D& point3D = reconstruction->Point3D(point3D_id);
