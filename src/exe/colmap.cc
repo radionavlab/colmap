@@ -37,6 +37,7 @@
 #include <boost/property_tree/ptree.hpp>
 
 #include "base/similarity_transform.h"
+#include "base/roi.h"
 #include "controllers/automatic_reconstruction.h"
 #include "controllers/bundle_adjustment.h"
 #include "controllers/hierarchical_mapper.h"
@@ -291,11 +292,13 @@ int RunCovarianceEvaluator(int argc, char** argv) {
 
   std::string input_path;
   std::string output_path;
+  std::string roi_path;
 
   OptionManager options;
   options.AddDatabaseOptions();
   options.AddRequiredOption("input_path", &input_path);
   options.AddRequiredOption("output_path", &output_path);
+  options.AddDefaultOption("roi_path", &roi_path);
   options.Parse(argc, argv);
 
   if (!ExistsDir(input_path)) {
@@ -307,6 +310,12 @@ int RunCovarianceEvaluator(int argc, char** argv) {
     std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
     return EXIT_FAILURE;
   }
+
+  // Parse the ROI file
+  std::vector<PolyhedronFace> faces;
+  Polyhedron p;
+  if (!roi_path.empty()) { p.LoadFromFile(roi_path); }
+  options.bundle_adjustment->cov.ROI = p;
 
   // Read a reconstruction from path
   // Contains the estimated camera poses, camera params, 3D points

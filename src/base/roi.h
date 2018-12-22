@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "util/logging.h"
+#include "util/misc.h"
 
 namespace colmap {
 
@@ -59,6 +60,26 @@ namespace colmap {
     // POD
     std::vector<PolyhedronFace> faces_;
     static constexpr double BOUND = -1e-15;
+
+    void LoadFromFile(const std::string& path) {
+      std::vector<std::string> roi_lines = ReadTextFileLines(path);
+      PolyhedronFace face;
+      for(const std::string& line: roi_lines) {
+        if(line[0] == '!') { faces_.push_back(face); face = PolyhedronFace(); continue; }
+        if(line[0] == '#') { continue; }
+
+        std::istringstream iss(line);
+        std::vector<std::string> tokens(
+            std::istream_iterator<std::string>{iss},
+            std::istream_iterator<std::string>());
+        
+        Eigen::Vector3d point;
+        for(size_t idx = 0; idx < 3; ++idx) {
+         point(idx) = std::stod(tokens[idx]);
+        }
+        face.points_.push_back(point);
+      }
+    }
 
     // Is point contained within polyhedron
     bool Contains(const Eigen::Vector3d& point) const {
