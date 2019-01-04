@@ -89,6 +89,9 @@ void Reconstruction::Load(const DatabaseCache& database_cache) {
       }
       existing_image.SetNumObservations(image.second.NumObservations());
       existing_image.SetNumCorrespondences(image.second.NumCorrespondences());
+      existing_image.SetTvecPrior(image.second.TvecPrior());
+      existing_image.SetQvecPrior(image.second.QvecPrior());
+      existing_image.SetCovariancePrior(image.second.CovariancePrior());
     } else {
       AddImage(image.second);
     }

@@ -1141,6 +1141,37 @@ void SpatialFeatureMatcher::Run() {
   cache_.Setup();
 
   const std::vector<image_t> image_ids = cache_.GetImageIds();
+  bool to_match_image_table[image_ids.size()];
+  for(size_t i = 0; i < image_ids.size(); ++i) { to_match_image_table[i] = false; }
+  if (options_.match_list_path == "") {
+    for(size_t i = 0; i < image_ids.size(); ++i) { to_match_image_table[i] = true; }
+  } else {
+    // Map image names to image identifiers.
+    std::unordered_map<std::string, image_t> image_name_to_image_id;
+    image_name_to_image_id.reserve(image_ids.size());
+    for (const auto image_id : image_ids) {
+      const auto& image = cache_.GetImage(image_id);
+      image_name_to_image_id.emplace(image.Name(), image_id);
+    }
+
+    // Read the match list path.
+    std::ifstream file(options_.match_list_path);
+    CHECK(file.is_open()) << options_.match_list_path;
+    std::string line;
+    while (std::getline(file, line)) {
+      StringTrim(&line);
+
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      if (image_name_to_image_id.count(line) == 0) {
+        std::cerr << "ERROR: Image " << line << " does not exist." << std::endl;
+      } else {
+        to_match_image_table[image_name_to_image_id.at(line)] = true;
+      }
+    }
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Spatial indexing
@@ -1258,6 +1289,7 @@ void SpatialFeatureMatcher::Run() {
   // Matching
   //////////////////////////////////////////////////////////////////////////////
 
+
   const float max_distance =
       static_cast<float>(options_.max_distance * options_.max_distance);
 
@@ -1268,6 +1300,10 @@ void SpatialFeatureMatcher::Run() {
     if (IsStopped()) {
       GetTimer().PrintMinutes();
       return;
+    }
+
+    if(false == to_match_image_table[image_ids.at(location_idxs[i])]) {
+      continue;
     }
 
     timer.Restart();

@@ -256,23 +256,6 @@ void BatchMapperController::Reconstruct(
 
   mapper.BeginReconstruction(&reconstruction);
 
-	// TODO HACKING
-  const camera_t camera_id = 1;
-  const size_t width = 3840;
-  const size_t height = 2160;
-  const std::string params = "1662.07,1920,1080,-0.021983";
-
-  Camera& cam = reconstruction.Camera(camera_id);
-  cam.SetWidth(width);
-  cam.SetHeight(height);
-  cam.SetParamsFromString(params);
-
-  if(!cam.VerifyParams()) {
-    std::cerr << "Camera params wrong!" << std::endl;
-    return;
-  }
-	// END TODO HACKING
-
   ///////////////////////////////////////////////////////////////////////////
   // Register all images
   ////////////////////////////////////////////////////////////////////////////
@@ -284,6 +267,16 @@ void BatchMapperController::Reconstruct(
 
   for(image_t& next_image_id: image_ids) {
     const Image& next_image = reconstruction.Image(next_image_id);
+
+    if(next_image.IsRegistered()) {
+      continue;
+    }
+
+    CHECK(
+        next_image.HasTvecPrior() && 
+        next_image.HasQvecPrior() && 
+        next_image.HasCovariancePrior()) << "Batch mapper requires priors "
+                                            "for all images.";
 
     PrintHeading1(StringPrintf("Registering image #%d (%d)", next_image_id,
                                reconstruction.NumRegImages() + 1));

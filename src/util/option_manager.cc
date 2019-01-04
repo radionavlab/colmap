@@ -36,6 +36,7 @@
 
 #include "base/image_reader.h"
 #include "controllers/incremental_mapper.h"
+#include "controllers/batch_mapper.h"
 #include "feature/extraction.h"
 #include "feature/matching.h"
 #include "feature/sift.h"
@@ -66,6 +67,7 @@ OptionManager::OptionManager() {
   transitive_matching.reset(new TransitiveMatchingOptions());
   bundle_adjustment.reset(new BundleAdjustmentOptions());
   mapper.reset(new IncrementalMapperOptions());
+  batch_mapper.reset(new BatchMapperOptions());
   patch_match_stereo.reset(new mvs::PatchMatchOptions());
   stereo_fusion.reset(new mvs::StereoFusionOptions());
   poisson_meshing.reset(new mvs::PoissonMeshingOptions());
@@ -172,6 +174,7 @@ void OptionManager::AddAllOptions() {
   AddTransitiveMatchingOptions();
   AddBundleAdjustmentOptions();
   AddMapperOptions();
+  AddBatchMapperOptions();
   AddPatchMatchStereoOptions();
   AddStereoFusionOptions();
   AddPoissonMeshingOptions();
@@ -387,6 +390,8 @@ void OptionManager::AddSpatialMatchingOptions() {
                               &spatial_matching->max_num_neighbors);
   AddAndRegisterDefaultOption("SpatialMatching.max_distance",
                               &spatial_matching->max_distance);
+  AddAndRegisterDefaultOption("SpatialMatching.match_list_path",
+                              &spatial_matching->match_list_path);
 }
 
 void OptionManager::AddTransitiveMatchingOptions() {
@@ -545,6 +550,86 @@ void OptionManager::AddMapperOptions() {
                               &mapper->triangulation.min_angle);
   AddAndRegisterDefaultOption("Mapper.tri_ignore_two_view_tracks",
                               &mapper->triangulation.ignore_two_view_tracks);
+}
+
+void OptionManager::AddBatchMapperOptions() {
+  if (added_batch_mapper_options_) {
+    return;
+  }
+  added_batch_mapper_options_ = true;
+
+  AddAndRegisterDefaultOption("Mapper.min_num_matches",
+                              &batch_mapper->min_num_matches);
+  AddAndRegisterDefaultOption("Mapper.ignore_watermarks",
+                              &batch_mapper->ignore_watermarks);
+  AddAndRegisterDefaultOption("Mapper.extract_colors", &batch_mapper->extract_colors);
+  AddAndRegisterDefaultOption("Mapper.num_threads", &batch_mapper->num_threads);
+  AddAndRegisterDefaultOption("Mapper.min_focal_length_ratio",
+                              &batch_mapper->min_focal_length_ratio);
+  AddAndRegisterDefaultOption("Mapper.max_focal_length_ratio",
+                              &batch_mapper->max_focal_length_ratio);
+  AddAndRegisterDefaultOption("Mapper.max_extra_param",
+                              &batch_mapper->max_extra_param);
+  AddAndRegisterDefaultOption("Mapper.ba_refine_focal_length",
+                              &batch_mapper->ba_refine_focal_length);
+  AddAndRegisterDefaultOption("Mapper.ba_refine_principal_point",
+                              &batch_mapper->ba_refine_principal_point);
+  AddAndRegisterDefaultOption("Mapper.ba_refine_extra_params",
+                              &batch_mapper->ba_refine_extra_params);
+  AddAndRegisterDefaultOption("Mapper.ba_global_max_num_iterations",
+                              &batch_mapper->ba_global_max_num_iterations);
+  AddAndRegisterDefaultOption("Mapper.ba_global_max_refinements",
+                              &batch_mapper->ba_global_max_refinements);
+  AddAndRegisterDefaultOption("Mapper.ba_global_max_refinement_change",
+                              &batch_mapper->ba_global_max_refinement_change);
+
+  // BatchMapper.
+  AddAndRegisterDefaultOption("Mapper.init_min_num_inliers",
+                              &batch_mapper->mapper.init_min_num_inliers);
+  AddAndRegisterDefaultOption("Mapper.init_max_error",
+                              &batch_mapper->mapper.init_max_error);
+  AddAndRegisterDefaultOption("Mapper.init_max_forward_motion",
+                              &batch_mapper->mapper.init_max_forward_motion);
+  AddAndRegisterDefaultOption("Mapper.init_min_tri_angle",
+                              &batch_mapper->mapper.init_min_tri_angle);
+  AddAndRegisterDefaultOption("Mapper.init_max_reg_trials",
+                              &batch_mapper->mapper.init_max_reg_trials);
+  AddAndRegisterDefaultOption("Mapper.abs_pose_max_error",
+                              &batch_mapper->mapper.abs_pose_max_error);
+  AddAndRegisterDefaultOption("Mapper.abs_pose_min_num_inliers",
+                              &batch_mapper->mapper.abs_pose_min_num_inliers);
+  AddAndRegisterDefaultOption("Mapper.abs_pose_min_inlier_ratio",
+                              &batch_mapper->mapper.abs_pose_min_inlier_ratio);
+  AddAndRegisterDefaultOption("Mapper.filter_max_reproj_error",
+                              &batch_mapper->mapper.filter_max_reproj_error);
+  AddAndRegisterDefaultOption("Mapper.filter_min_tri_angle",
+                              &batch_mapper->mapper.filter_min_tri_angle);
+  AddAndRegisterDefaultOption("Mapper.max_reg_trials",
+                              &batch_mapper->mapper.max_reg_trials);
+
+  // IncrementalTriangulator.
+  AddAndRegisterDefaultOption("Mapper.tri_max_transitivity",
+                              &batch_mapper->triangulation.max_transitivity);
+  AddAndRegisterDefaultOption("Mapper.tri_create_max_angle_error",
+                              &batch_mapper->triangulation.create_max_angle_error);
+  AddAndRegisterDefaultOption("Mapper.tri_continue_max_angle_error",
+                              &batch_mapper->triangulation.continue_max_angle_error);
+  AddAndRegisterDefaultOption("Mapper.tri_merge_max_reproj_error",
+                              &batch_mapper->triangulation.merge_max_reproj_error);
+  AddAndRegisterDefaultOption("Mapper.tri_complete_max_reproj_error",
+                              &batch_mapper->triangulation.complete_max_reproj_error);
+  AddAndRegisterDefaultOption("Mapper.tri_complete_max_transitivity",
+                              &batch_mapper->triangulation.complete_max_transitivity);
+  AddAndRegisterDefaultOption("Mapper.tri_re_max_angle_error",
+                              &batch_mapper->triangulation.re_max_angle_error);
+  AddAndRegisterDefaultOption("Mapper.tri_re_min_ratio",
+                              &batch_mapper->triangulation.re_min_ratio);
+  AddAndRegisterDefaultOption("Mapper.tri_re_max_trials",
+                              &batch_mapper->triangulation.re_max_trials);
+  AddAndRegisterDefaultOption("Mapper.tri_min_angle",
+                              &batch_mapper->triangulation.min_angle);
+  AddAndRegisterDefaultOption("Mapper.tri_ignore_two_view_tracks",
+                              &batch_mapper->triangulation.ignore_two_view_tracks);
 }
 
 void OptionManager::AddPatchMatchStereoOptions() {

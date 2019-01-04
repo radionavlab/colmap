@@ -50,6 +50,7 @@ struct SpatialMatchingOptions;
 struct TransitiveMatchingOptions;
 struct BundleAdjustmentOptions;
 struct IncrementalMapperOptions;
+struct BatchMapperOptions;
 struct RenderOptions;
 
 namespace mvs {
@@ -91,6 +92,7 @@ class OptionManager {
   void AddTransitiveMatchingOptions();
   void AddBundleAdjustmentOptions();
   void AddMapperOptions();
+  void AddBatchMapperOptions();
   void AddPatchMatchStereoOptions();
   void AddStereoFusionOptions();
   void AddPoissonMeshingOptions();
@@ -130,6 +132,7 @@ class OptionManager {
 
   std::shared_ptr<BundleAdjustmentOptions> bundle_adjustment;
   std::shared_ptr<IncrementalMapperOptions> mapper;
+  std::shared_ptr<BatchMapperOptions> batch_mapper;
 
   std::shared_ptr<mvs::PatchMatchOptions> patch_match_stereo;
   std::shared_ptr<mvs::StereoFusionOptions> stereo_fusion;
@@ -168,6 +171,7 @@ class OptionManager {
   bool added_transitive_match_options_;
   bool added_ba_options_;
   bool added_mapper_options_;
+  bool added_batch_mapper_options_;
   bool added_patch_match_stereo_options_;
   bool added_stereo_fusion_options_;
   bool added_poisson_meshing_options_;

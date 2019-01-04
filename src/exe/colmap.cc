@@ -180,12 +180,17 @@ int RunAutomaticReconstructor(int argc, char** argv) {
 
 int RunBatchMapper(int argc, char** argv) {
   std::string output_path;
+  std::string input_path;
+  std::string image_list_path;
 
   OptionManager options;
   options.AddDatabaseOptions();
   options.AddImageOptions();
+  options.AddDefaultOption("input_path", &input_path);
   options.AddRequiredOption("output_path", &output_path);
+  options.AddDefaultOption("image_list_path", &image_list_path);
   options.AddBundleAdjustmentOptions();
+  options.AddBatchMapperOptions();
   options.Parse(argc, argv);
 
   if (!ExistsDir(output_path)) {
@@ -193,9 +198,20 @@ int RunBatchMapper(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  // Create a new reconstruction
+  if (!image_list_path.empty()) {
+    const auto image_names = ReadTextFileLines(image_list_path);
+    options.batch_mapper->image_names =
+        std::set<std::string>(image_names.begin(), image_names.end());
+  }
+
   ReconstructionManager reconstruction_manager;
-  reconstruction_manager.Add();
+  if (input_path != "") {
+    if (!ExistsDir(input_path)) {
+      std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+      return EXIT_FAILURE;
+    }
+    reconstruction_manager.Read(input_path);
+  }
 
   // Create a mapping instance
   BatchMapperOptions batch_mapper_options;
@@ -210,6 +226,7 @@ int RunBatchMapper(int argc, char** argv) {
   // Save output
   std::cout << "Saving output..." << std::endl;
   reconstruction_manager.Get(0).Write(output_path);
+  reconstruction_manager.Get(0).WriteText(output_path);
  
   std::cout << "Success!" << std::endl;
 
@@ -239,33 +256,54 @@ int RunBundleAdjuster(int argc, char** argv) {
 }
 
 int RunCameraLocator(int argc, char** argv) {
-  // std::string input_path;
-  // std::string output_path;
-  // std::string image_list_path;
+  std::string output_path;
+  std::string input_path;
+  std::string image_list_path;
 
-  // OptionManager options;
-  // options.AddRequiredOption("input_path", &input_path);
-  // options.AddRequiredOption("output_path", &output_path);
-  // options.AddDefaultOption("image_list_path", &image_list_path);
-  // options.AddBundleAdjustmentOptions();
-  // options.Parse(argc, argv);
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.AddImageOptions();
+  options.AddRequiredOption("input_path", &input_path);
+  options.AddRequiredOption("output_path", &output_path);
+  options.AddDefaultOption("image_list_path", &image_list_path);
+  options.AddBundleAdjustmentOptions();
+  options.AddBatchMapperOptions();
+  options.Parse(argc, argv);
+
+  if (!ExistsDir(output_path)) {
+    std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
 
   // if (!image_list_path.empty()) {
-  //   reader_options.image_list = ReadTextFileLines(image_list_path);
-  //   if (reader_options.image_list.empty()) {
-  //     return EXIT_SUCCESS;
-  //   }
+  //   const auto image_names = ReadTextFileLines(image_list_path);
+  //   options.batch_mapper->image_names =
+  //       std::set<std::string>(image_names.begin(), image_names.end());
   // }
 
-  // Reconstruction reconstruction;
-  // reconstruction.Read(input_path);
-  // // options.
+  ReconstructionManager reconstruction_manager;
+  if (!ExistsDir(input_path)) {
+    std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
+  reconstruction_manager.Read(input_path);
 
-  // BundleAdjustmentController ba_controller(options, &reconstruction);
-  // ba_controller.Start();
-  // ba_controller.Wait();
+  // Create a mapping instance
+  BatchMapperOptions batch_mapper_options;
+  BatchMapperController mapper(&batch_mapper_options,
+                               *options.image_path,
+                               *options.database_path,
+                               &reconstruction_manager);
 
-  // reconstruction.Write(output_path);
+  mapper.Start();
+  mapper.Wait();
+
+  // Save output
+  std::cout << "Saving output..." << std::endl;
+  reconstruction_manager.Get(0).Write(output_path);
+  reconstruction_manager.Get(0).WriteText(output_path);
+ 
+  std::cout << "Success!" << std::endl;
 
   return EXIT_SUCCESS;
 }
@@ -907,7 +945,9 @@ int RunPriorsLoader(int argc, char** argv) {
   options.AddRequiredOption("metadata_path", &metadata_path);
   options.Parse(argc, argv);
 
-  std::cout << "Loading Priors..." << std::endl;
+  Timer timer;
+  timer.Start();
+  PrintHeading1("Loading Priors");
 
   // Load images and features from database
   Database db(*options.database_path);
@@ -950,6 +990,8 @@ int RunPriorsLoader(int argc, char** argv) {
   }
 
   std::cout << "Success!" << std::endl;
+  std::cout << std::endl;
+  timer.PrintMinutes();
 
   return EXIT_SUCCESS;
 }
@@ -1774,20 +1816,6 @@ int RunTransitiveMatcher(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
-int RunTucker(int argc, char** argv) {
-  OptionManager options;
-  options.AddDatabaseOptions();
-  options.Parse(argc, argv);
-
-  Database database(*options.database_path);
-
-  for(const auto& img: database.ReadAllImages()) {
-    std::cout << img.Tvec() << std::endl;
-  }
-
-  return EXIT_SUCCESS;
-}
-
 // Loads descriptors for training from the database. Loads all descriptors from
 // the database if max_num_images < 0, otherwise the descriptors of a random
 // subset of images are selected.
@@ -2119,7 +2147,6 @@ int main(int argc, char** argv) {
   commands.emplace_back("spatial_matcher", &RunSpatialMatcher);
   commands.emplace_back("stereo_fusion", &RunStereoFuser);
   commands.emplace_back("transitive_matcher", &RunTransitiveMatcher);
-  commands.emplace_back("tucker", &RunTucker);
   commands.emplace_back("vocab_tree_builder", &RunVocabTreeBuilder);
   commands.emplace_back("vocab_tree_matcher", &RunVocabTreeMatcher);
   commands.emplace_back("vocab_tree_retriever", &RunVocabTreeRetriever);

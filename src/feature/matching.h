@@ -132,6 +132,9 @@ struct SpatialMatchingOptions {
   // coordinates the unit is Euclidean distance in meters.
   double max_distance = 100;
 
+  // Path to the file with the matches.
+  std::string match_list_path = "";
+
   bool Check() const;
 };
 
