@@ -351,33 +351,26 @@ int RunCovarianceEvaluator(int argc, char** argv) {
 
   // Parse the ROI file
   std::vector<PolyhedronFace> faces;
-  Polyhedron p;
-  if (!roi_path.empty()) { p.LoadFromFile(roi_path); }
-  options.bundle_adjustment->cov.ROI = p;
+  Polyhedron polyhedron;
+  if (!roi_path.empty()) { polyhedron.LoadFromFile(roi_path); }
+  options.bundle_adjustment->cov.ROI = polyhedron;
 
   // Read a reconstruction from path
   // Contains the estimated camera poses, camera params, 3D points
   ReconstructionManager reconstruction_manager;
-  size_t reconstruction_idx;
-  if (input_path != "") {
-    if (!ExistsDir(input_path)) {
-      std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
-      return EXIT_FAILURE;
-    }
-    reconstruction_idx = reconstruction_manager.Read(input_path);
-  }
+  size_t reconstruction_idx = reconstruction_manager.Read(input_path);
+
 
   // Load priors from database
+  DatabaseCache db_cache;
   Database db(*options.database_path);
-  std::vector<Image> db_imgs = db.ReadAllImages();
-  for(const Image& db_img: db_imgs) {
-    Image& reconstruction_img =
-      reconstruction_manager.Get(reconstruction_idx).Image(db_img.ImageId());
-
-    reconstruction_img.SetQvecPrior(db_img.QvecPrior());
-    reconstruction_img.SetTvecPrior(db_img.TvecPrior());
-    reconstruction_img.SetCovariancePrior(db_img.CovariancePrior());
-  }
+  const size_t min_num_matches =
+      static_cast<size_t>(options.mapper->min_num_matches);
+  db_cache.Load(db, 
+                min_num_matches,
+                options.mapper->ignore_watermarks,
+                options.mapper->image_names);
+  reconstruction_manager.Get(reconstruction_idx).Load(db_cache);
 
   // Set options
   OptionManager options_(options);
