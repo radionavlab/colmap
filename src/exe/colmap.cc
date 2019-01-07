@@ -44,6 +44,7 @@
 #include "controllers/batch_mapper.h"
 #include "controllers/covariance_evaluator.h"
 #include "estimators/coordinate_frame.h"
+#include "estimators/pose.h"
 #include "feature/extraction.h"
 #include "feature/matching.h"
 #include "feature/utils.h"
@@ -265,43 +266,91 @@ int RunCameraLocator(int argc, char** argv) {
   options.AddImageOptions();
   options.AddRequiredOption("input_path", &input_path);
   options.AddRequiredOption("output_path", &output_path);
-  options.AddDefaultOption("image_list_path", &image_list_path);
-  options.AddBundleAdjustmentOptions();
-  options.AddBatchMapperOptions();
+  options.AddRequiredOption("image_list_path", &image_list_path);
   options.Parse(argc, argv);
+
+  if (!ExistsDir(input_path)) {
+    std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
 
   if (!ExistsDir(output_path)) {
     std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
     return EXIT_FAILURE;
   }
 
-  // if (!image_list_path.empty()) {
-  //   const auto image_names = ReadTextFileLines(image_list_path);
-  //   options.batch_mapper->image_names =
-  //       std::set<std::string>(image_names.begin(), image_names.end());
-  // }
-
-  ReconstructionManager reconstruction_manager;
-  if (!ExistsDir(input_path)) {
-    std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+  if (!ExistsFile(image_list_path)) {
+    std::cerr << "ERROR: `image_list_path` is not a file." << std::endl;
     return EXIT_FAILURE;
   }
-  reconstruction_manager.Read(input_path);
 
-  // Create a mapping instance
-  BatchMapperOptions batch_mapper_options;
-  BatchMapperController mapper(&batch_mapper_options,
-                               *options.image_path,
-                               *options.database_path,
-                               &reconstruction_manager);
+  if (image_list_path.empty()) {
+    std::cerr << "ERROR: no images to process." << std::endl;
+    return EXIT_FAILURE;
+  }
 
-  mapper.Start();
-  mapper.Wait();
+  const auto image_names = ReadTextFileLines(image_list_path);
+
+  ReconstructionManager reconstruction_manager;
+  size_t reconstruction_idx = reconstruction_manager.Read(input_path);
+
+  DatabaseCache db_cache;
+  Database db(*options.database_path);
+  const size_t min_num_matches =
+      static_cast<size_t>(options.mapper->min_num_matches);
+  db_cache.Load(db, 
+                min_num_matches,
+                options.mapper->ignore_watermarks,
+                options.mapper->image_names);
+
+  Reconstruction& reconstruction = reconstruction_manager.Get(reconstruction_idx);
+  reconstruction.Load(db_cache);
+
+  for (const std::string& image_name: image_names) {
+    const Image* image = reconstruction.FindImageWithName(image_name);
+    // if(!image->IsRegistered()) {
+    //   reconstruction.RegisterImage(image->ImageId());
+    // }
+
+    std::vector<class Point2D> points2D = image->Points2D();
+    std::vector<Eigen::Vector2d> points2D_vec;
+    std::vector<Eigen::Vector3d> points3D_vec;
+    for(const Point2D& point2D:  points2D) {
+      if(!point2D.HasPoint3D()) {
+        continue;
+      }
+
+      points2D_vec.push_back(point2D.XY());
+      points3D_vec.push_back(reconstruction.Points3D().at(point2D.Point3DId()).XYZ());
+    }
+
+
+    Camera camera = reconstruction.Cameras().at(image->CameraId());
+
+    Eigen::Vector4d qvec;
+    Eigen::Vector3d tvec;
+    size_t num_inliers;
+    std::vector<char> inlier_mask;
+
+    AbsolutePoseEstimationOptions abs_pose_options;
+    abs_pose_options.ransac_options.max_error = 12.0;
+    abs_pose_options.ransac_options.min_inlier_ratio = 0.25;
+    abs_pose_options.ransac_options.min_num_trials = 30;
+    abs_pose_options.ransac_options.confidence = 0.9999;
+    abs_pose_options.estimate_focal_length = false;
+
+    EstimateAbsolutePose(abs_pose_options, points2D_vec, points3D_vec,
+                         &qvec, &tvec, &camera, &num_inliers, &inlier_mask);
+
+    std::cout << "Qvec: " << qvec.transpose() << std::endl;
+    std::cout << "Tvec: " << tvec.transpose() << std::endl;
+  }
+
 
   // Save output
-  std::cout << "Saving output..." << std::endl;
-  reconstruction_manager.Get(0).Write(output_path);
-  reconstruction_manager.Get(0).WriteText(output_path);
+  // std::cout << "Saving output..." << std::endl;
+  // reconstruction_manager.Get(0).Write(output_path);
+  // reconstruction_manager.Get(0).WriteText(output_path);
  
   std::cout << "Success!" << std::endl;
 
