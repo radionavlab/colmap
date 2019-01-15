@@ -43,6 +43,7 @@
 #include "controllers/hierarchical_mapper.h"
 #include "controllers/batch_mapper.h"
 #include "controllers/covariance_evaluator.h"
+#include "controllers/next_best_view.h"
 #include "estimators/coordinate_frame.h"
 #include "estimators/pose.h"
 #include "feature/extraction.h"
@@ -54,6 +55,9 @@
 #include "ui/main_window.h"
 #include "util/opengl_utils.h"
 #include "util/version.h"
+
+#include <Eigen/Eigenvalues>
+#include <queue>
 
 using namespace colmap;
 
@@ -215,8 +219,7 @@ int RunBatchMapper(int argc, char** argv) {
   }
 
   // Create a mapping instance
-  BatchMapperOptions batch_mapper_options;
-  BatchMapperController mapper(&batch_mapper_options,
+  BatchMapperController mapper(options.batch_mapper.get(),
                                *options.image_path,
                                *options.database_path,
                                &reconstruction_manager);
@@ -291,8 +294,8 @@ int RunCameraLocator(int argc, char** argv) {
 
   const auto image_names = ReadTextFileLines(image_list_path);
 
-  ReconstructionManager reconstruction_manager;
-  size_t reconstruction_idx = reconstruction_manager.Read(input_path);
+  Reconstruction reconstruction;
+  reconstruction.Read(input_path);
 
   DatabaseCache db_cache;
   Database db(*options.database_path);
@@ -303,14 +306,10 @@ int RunCameraLocator(int argc, char** argv) {
                 options.mapper->ignore_watermarks,
                 options.mapper->image_names);
 
-  Reconstruction& reconstruction = reconstruction_manager.Get(reconstruction_idx);
   reconstruction.Load(db_cache);
 
   for (const std::string& image_name: image_names) {
     const Image* image = reconstruction.FindImageWithName(image_name);
-    // if(!image->IsRegistered()) {
-    //   reconstruction.RegisterImage(image->ImageId());
-    // }
 
     std::vector<class Point2D> points2D = image->Points2D();
     std::vector<Eigen::Vector2d> points2D_vec;
@@ -323,7 +322,6 @@ int RunCameraLocator(int argc, char** argv) {
       points2D_vec.push_back(point2D.XY());
       points3D_vec.push_back(reconstruction.Points3D().at(point2D.Point3DId()).XYZ());
     }
-
 
     Camera camera = reconstruction.Cameras().at(image->CameraId());
 
@@ -421,11 +419,8 @@ int RunCovarianceEvaluator(int argc, char** argv) {
                 options.mapper->image_names);
   reconstruction_manager.Get(reconstruction_idx).Load(db_cache);
 
-  // Set options
-  OptionManager options_(options);
-
-  // Run BA with covariance
-  CovarianceEvaluatorController cov_controller(options_, &reconstruction_manager.Get(0));
+  CovarianceEvaluatorOptions cov_options;
+  CovarianceEvaluatorController cov_controller(&cov_options, &reconstruction_manager);
   cov_controller.Start();
   cov_controller.Wait(); 
 
@@ -1455,6 +1450,83 @@ int RunModelOrientationAligner(int argc, char** argv) {
   return EXIT_SUCCESS;
 }
 
+int RunNextBestView(int argc, char** argv) {
+
+  std::string output_path;
+  std::string input_path;
+  std::string incorporated_image_list_path;
+  std::string candidate_image_list_path;
+  std::string roi_path;
+
+  OptionManager options;
+  options.AddDatabaseOptions();
+  options.AddImageOptions();
+  options.AddRequiredOption("input_path", &input_path);
+  options.AddRequiredOption("output_path", &output_path);
+  options.AddRequiredOption("candidate_image_list_path", &candidate_image_list_path);
+  options.AddRequiredOption("incorporated_image_list_path", &incorporated_image_list_path);
+  options.AddDefaultOption("roi_path", &roi_path);
+  options.Parse(argc, argv);
+
+  if (!ExistsDir(output_path)) {
+    std::cerr << "ERROR: `output_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  if (!ExistsDir(input_path)) {
+    std::cerr << "ERROR: `input_path` is not a directory." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  Reconstruction reconstruction;
+  reconstruction.Read(input_path);
+
+  if (!ExistsFile(candidate_image_list_path)) {
+    std::cerr << "ERROR: `candidate_image_list_path` is not a file." << std::endl;
+    return EXIT_FAILURE;
+  }
+  const std::vector<std::string> candidate_image_names =
+    ReadTextFileLines(candidate_image_list_path);
+
+  if (!ExistsFile(incorporated_image_list_path)) {
+    std::cerr << "ERROR: `incorporated_image_list_path` is not a file." << std::endl;
+    return EXIT_FAILURE;
+  }
+  const std::vector<std::string> incorporated_image_names =
+    ReadTextFileLines(incorporated_image_list_path);
+
+  if (!ExistsFile(roi_path)) {
+    std::cerr << "ERROR: `roi_path` is not a file." << std::endl;
+    return EXIT_FAILURE;
+  }
+  Polyhedron polyhedron;
+  polyhedron.LoadFromFile(roi_path);
+
+  NextBestViewOptions next_best_view_options;
+  next_best_view_options.roi = polyhedron;
+  next_best_view_options.incorporated_image_names =
+      std::set<std::string>(incorporated_image_names.begin(), incorporated_image_names.end());
+  next_best_view_options.candidate_image_names = 
+    std::set<std::string>(candidate_image_names.begin(), candidate_image_names.end());
+
+  NextBestViewController nbv(&next_best_view_options,
+                             *options.image_path,
+                             *options.database_path,
+                             &reconstruction);
+
+  nbv.Start();
+  nbv.Wait();
+
+  // Save output
+  std::cout << "Saving output..." << std::endl;
+  reconstruction.Write(output_path);
+  reconstruction.WriteText(output_path);
+ 
+  std::cout << "Success!" << std::endl;
+
+  return EXIT_SUCCESS;
+}
+
 int RunSequentialMatcher(int argc, char** argv) {
   OptionManager options;
   options.AddDatabaseOptions();
@@ -2180,6 +2252,8 @@ int main(int argc, char** argv) {
   commands.emplace_back("model_merger", &RunModelMerger);
   commands.emplace_back("model_orientation_aligner",
                         &RunModelOrientationAligner);
+  commands.emplace_back("next_best_view",
+                        &RunNextBestView);
   commands.emplace_back("patch_match_stereo", &RunPatchMatchStereo);
   commands.emplace_back("point_filtering", &RunPointFiltering);
   commands.emplace_back("point_triangulator", &RunPointTriangulator);

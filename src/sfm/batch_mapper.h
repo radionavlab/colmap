@@ -104,11 +104,6 @@ class BatchMapper {
   // registered images (in which case `RegisterNextImage` must be called)
   void BeginReconstruction(Reconstruction* reconstruction);
 
-  // Cleanup the mapper after the current reconstruction is done. If the
-  // model is discarded, the number of total and shared registered images will
-  // be updated accordingly.
-  void EndReconstruction(const bool discard);
-
   // Attempt to register image to the existing model.
   bool RegisterNextImage(const Options& options, const image_t image_id);
 

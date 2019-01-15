@@ -38,4 +38,5 @@ COLMAP_ADD_SOURCES(
     incremental_mapper.h incremental_mapper.cc
     batch_mapper.h batch_mapper.cc
     covariance_evaluator.h covariance_evaluator.cc
+    next_best_view.h next_best_view.cc
 )

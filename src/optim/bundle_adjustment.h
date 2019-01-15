@@ -66,10 +66,14 @@ struct BundleAdjustmentOptions {
 
   // Covariance options. 
   typedef struct {
-    // Whether to evalutate covariance or not. If evaluating covariance, all
-    // parameters will be held constant.
+    // Whether to evalutate covariance or not.
     bool compute = false;
+
+    // Polyhedron specifying a region of interest
     Polyhedron ROI;
+
+    // Set of keypoints to calculate the covariance of
+    std::set<point3D_t> keypoints;
   } CovarianceOptions;
 
   // Whether to compute covariance of 3D points

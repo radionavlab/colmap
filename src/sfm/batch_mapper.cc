@@ -78,13 +78,6 @@ void BatchMapper::BeginReconstruction(Reconstruction* reconstruction) {
   filtered_images_.clear();
 }
 
-void BatchMapper::EndReconstruction(const bool discard) {
-  CHECK_NOTNULL(reconstruction_);
-  reconstruction_->TearDown();
-  reconstruction_ = nullptr;
-  triangulator_.reset();
-}
-
 bool BatchMapper::RegisterNextImage(const Options& options,
                                     const image_t image_id) {
   CHECK_NOTNULL(reconstruction_);

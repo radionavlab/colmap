@@ -29,18 +29,44 @@
 //
 // Author: Tucker Haydon
 
-#ifndef COLMAP_SRC_CONTROLLERS_BATCH_MAPPER_H_
-#define COLMAP_SRC_CONTROLLERS_BATCH_MAPPER_H_
+#ifndef COLMAP_SRC_CONTROLLERS_NEXT_BEST_VIEW_H_
+#define COLMAP_SRC_CONTROLLERS_NEXT_BEST_VIEW_H_
 
-#include "base/reconstruction_manager.h"
-#include "sfm/batch_mapper.h"
+#include "base/reconstruction.h"
+#include "base/roi.h"
+#include "base/database_cache.h"
 #include "util/threading.h"
-#include <boost/lexical_cast.hpp>
+#include "sfm/batch_mapper.h"
 
 namespace colmap {
 
-struct BatchMapperOptions {
+struct NextBestViewOptions {
  public:
+  // Polyhedron specifying the region of interest in which keypoints reside. If
+  // polyhedron is not specified, all points are considered keypoints.
+  Polyhedron roi;
+
+  // Which images are already incorporated
+  std::set<std::string> incorporated_image_names;
+
+  // Which images are being considered for incorporation
+  std::set<std::string> candidate_image_names;
+
+  // Uncertainty size in meters below which a keypoint is considered
+  // 'sufficiently-contrained'
+  double keypoint_uncertainty_bound = 0.01;
+
+  // Ratio of 'well-constrained' keypoints to toal keypoints above which the
+  // reconstruction is considered 'well-contrained'.  Functions as a terminal
+  // condition for the NBV solver.
+  double keypoint_uncertainty_ratio = 0.95;
+
+  // The minimum score a candidate image can have to be considered a candidate
+  double min_candidate_score = 100.00;
+
+  // The number of cameras in a camera network selection
+  size_t camera_network_size = 10;
+
   // The minimum number of matches for inlier matches to be considered.
   int min_num_matches = 15;
 
@@ -70,55 +96,62 @@ struct BatchMapperOptions {
   int ba_global_max_refinements = 5;
   double ba_global_max_refinement_change = 0.0005;
 
-  // Which images to reconstruct. If no images are specified, all images will
-  // be reconstructed by default.
-  std::set<std::string> image_names;
-
-  BatchMapper::Options Mapper() const;
-  IncrementalTriangulator::Options Triangulation() const;
-  BundleAdjustmentOptions GlobalBundleAdjustment() const;
+  BatchMapper::Options BatchMapperOptions() const;
+  IncrementalTriangulator::Options TriangulatorOptions() const;
+  BundleAdjustmentOptions BAOptions() const;
 
   bool Check() const;
 
  private:
   friend class OptionManager;
-  BatchMapper::Options mapper;
-  IncrementalTriangulator::Options triangulation;
+  BatchMapper::Options batch_mapper_options;
+  IncrementalTriangulator::Options triangulator_options;
 };
 
-// Class that controls the incremental mapping procedure by iteratively
-// initializing reconstructions from the same scene graph.
-class BatchMapperController : public Thread {
- public:
 
-  BatchMapperController(const BatchMapperOptions* options,
-                        const std::string& image_path,
-                        const std::string& database_path,
-                        ReconstructionManager* reconstruction_manager);
+// Class that selects a camera network by greedily choosing and incorporating
+// images that will reduce a covariance metric.
+class NextBestViewController : public Thread {
+ public:
+  NextBestViewController(const NextBestViewOptions* options,
+                         const std::string& image_path,
+                         const std::string& database_path,
+                         Reconstruction* reconstruction);
 
  private:
   void Run();
   bool LoadDatabase();
-  void Reconstruct(const BatchMapper::Options& init_mapper_options);
 
-  const BatchMapperOptions* options_;
+  /* Marks points within a specified region of interest as keypoints. These
+   * keypoints are tracked as the reconstruction size grows and only their
+   * covariance is evaluated. 
+   */
+  void MarkKeypoints();
+
+  /* Determines if the terminal conditions are met */
+  bool Finished();
+
+  /* Ensures that the keypoint list contains only valid keypoints. Sometimes the
+   * reconstruction determines that keypoints are bad and tosses them.
+   */
+  void ValidateKeypoints();
+
+  /* Evaluates the covariance of keypoints */
+  void EvaluateCovariance();
+
+  void Reconstruct();
+
+  const NextBestViewOptions* options_;
+  std::set<point3D_t> keypoints_;
+  std::set<std::string> candidate_image_names_;
+  std::set<std::string> incorporated_image_names_;
   const std::string image_path_;
   const std::string database_path_;
-  ReconstructionManager* reconstruction_manager_;
+  Reconstruction* reconstruction_;
   DatabaseCache database_cache_;
+
 };
-
-// Globally filter points and images in mapper.
-size_t FilterPoints(const BatchMapperOptions& options,
-                    BatchMapper* mapper);
-size_t FilterImages(const BatchMapperOptions& options,
-                    BatchMapper* mapper);
-
-// Globally complete and merge tracks in mapper.
-size_t CompleteAndMergeTracks(
-    const BatchMapperOptions& options,
-    BatchMapper* mapper);
 
 }  // namespace colmap
 
-#endif  // COLMAP_SRC_CONTROLLERS_BATCH_MAPPER_H_
+#endif  // COLMAP_SRC_CONTROLLERS_NEXT_BEST_VIEW_H_

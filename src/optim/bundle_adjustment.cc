@@ -316,10 +316,18 @@ bool BundleAdjuster::Solve(Reconstruction* reconstruction) {
     std::vector<point3D_t> point3D_ids;
     for(const auto& point3D : reconstruction->Points3D()) {
       const double* data = point3D.second.XYZ().data();
-      if(problem_->HasParameterBlock(data) && 
-          options_.cov.ROI.Contains(point3D.second.XYZ())) {
-        covariance_blocks.emplace_back(data, data);
-        point3D_ids.push_back(point3D.first);
+      if(problem_->HasParameterBlock(data)) {
+        if(0 == options_.cov.keypoints.size()) {
+          if(options_.cov.ROI.Contains(point3D.second.XYZ())) {
+            covariance_blocks.emplace_back(data, data);
+            point3D_ids.push_back(point3D.first);
+          }
+        } else {
+          if(options_.cov.keypoints.find(point3D.first) != options_.cov.keypoints.end()) {
+            covariance_blocks.emplace_back(data, data);
+            point3D_ids.push_back(point3D.first);
+          }
+        }
       }
     }
 

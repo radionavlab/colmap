@@ -192,8 +192,6 @@ BatchMapperController::BatchMapperController(
       database_path_(database_path),
       reconstruction_manager_(reconstruction_manager) {
   CHECK(options_->Check());
-  RegisterCallback(NEXT_IMAGE_REG_CALLBACK);
-  RegisterCallback(LAST_IMAGE_REG_CALLBACK);
 }
 
 void BatchMapperController::Run() {
@@ -257,13 +255,21 @@ void BatchMapperController::Reconstruct(
   mapper.BeginReconstruction(&reconstruction);
 
   ///////////////////////////////////////////////////////////////////////////
-  // Register all images
+  // Register images
   ////////////////////////////////////////////////////////////////////////////
 
-  const EIGEN_STL_UMAP(image_t, class Image) images_map = reconstruction.Images();
   std::vector<image_t> image_ids;
-  image_ids.reserve(images_map.size());
-  for(const auto& key_val: images_map) { image_ids.push_back(key_val.first); }
+  if(0 == options_->image_names.size()) {
+    const EIGEN_STL_UMAP(image_t, class Image) images_map = reconstruction.Images();
+    image_ids.reserve(images_map.size());
+    for(const auto& key_val: images_map) { image_ids.push_back(key_val.first); } 
+  } else {
+    for(const std::string& image_name: options_->image_names) {
+     const Image* image = reconstruction.FindImageWithName(image_name); 
+     CHECK(!(nullptr == image)) << "Image does not exist!";
+     image_ids.push_back(image->ImageId());
+    }
+  }
 
   for(image_t& next_image_id: image_ids) {
     const Image& next_image = reconstruction.Image(next_image_id);
@@ -296,14 +302,11 @@ void BatchMapperController::Reconstruct(
         ExtractColors(image_path_, next_image_id, &reconstruction);
       }
 
-      Callback(NEXT_IMAGE_REG_CALLBACK);
     } else {
       std::cout << "  => Could not register, trying another image."
                 << std::endl;
     }
   }
-
-  Callback(LAST_IMAGE_REG_CALLBACK);
 
   ///////////////////////////////////////////////////////////////////////////
   // Global Refinement
@@ -311,8 +314,8 @@ void BatchMapperController::Reconstruct(
 
   IterativeGlobalRefinement(*options_, &mapper);
 
-  const bool kDiscardReconstruction = false;
-  mapper.EndReconstruction(kDiscardReconstruction); 
+  // const bool kDiscardReconstruction = false;
+  // mapper.EndReconstruction(kDiscardReconstruction); 
 }
 
 }  // namespace colmap

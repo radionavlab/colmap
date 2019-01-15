@@ -62,16 +62,41 @@ class BundleAdjustmentIterationCallback : public ceres::IterationCallback {
 };
 }  // namespace
 
+bool CovarianceEvaluatorOptions::Check() const {
+  ba_options.Check();
+  return true;
+}
+
 CovarianceEvaluatorController::CovarianceEvaluatorController(
-    const OptionManager& options, Reconstruction* reconstruction)
-    : options_(options), reconstruction_(reconstruction) {}
+    const CovarianceEvaluatorOptions* options, 
+    ReconstructionManager* reconstruction_manager)
+    : options_(options), 
+      reconstruction_manager_(reconstruction_manager) 
+    {
+      options_->Check();   
+    }
+
 
 void CovarianceEvaluatorController::Run() {
-  CHECK_NOTNULL(reconstruction_);
+  CHECK_NOTNULL(reconstruction_manager_);
+
+  const bool initial_reconstruction_given = reconstruction_manager_->Size() > 0;
+  CHECK_EQ(reconstruction_manager_->Size(), 1) << "CovarianceEvaluator must resume "
+                                                  "a previous reconstruction.";
+  size_t reconstruction_idx;
+  if (!initial_reconstruction_given) {
+    std::cerr << "Cannot run CovarianceEvaluator with an empty reconstruction." << std::endl;
+    return;    
+  } else {
+    reconstruction_idx = 0;
+  }
+
+  Reconstruction& reconstruction =
+      reconstruction_manager_->Get(reconstruction_idx);
 
   PrintHeading1("Global bundle adjustment");
 
-  const std::vector<image_t>& reg_image_ids = reconstruction_->RegImageIds();
+  const std::vector<image_t>& reg_image_ids = reconstruction.RegImageIds();
 
   if (reg_image_ids.size() < 2) {
     std::cout << "ERROR: Need at least two views." << std::endl;
@@ -79,9 +104,9 @@ void CovarianceEvaluatorController::Run() {
   }
 
   // Avoid degeneracies in bundle adjustment.
-  reconstruction_->FilterObservationsWithNegativeDepth();
+  reconstruction.FilterObservationsWithNegativeDepth();
 
-  BundleAdjustmentOptions ba_options = *options_.bundle_adjustment;
+  BundleAdjustmentOptions ba_options = options_->ba_options;
   ba_options.solver_options.minimizer_progress_to_stdout = true;
   ba_options.cov.compute = true;
   ba_options.using_priors = true;
@@ -97,7 +122,7 @@ void CovarianceEvaluatorController::Run() {
 
   // Run bundle adjustment.
   BundleAdjuster bundle_adjuster(ba_options, ba_config);
-  bundle_adjuster.Solve(reconstruction_);
+  bundle_adjuster.Solve(&reconstruction);
 
   GetTimer().PrintMinutes();
 }

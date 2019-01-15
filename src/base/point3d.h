@@ -73,6 +73,7 @@ class Point3D {
 
   inline const Eigen::Matrix3d& Covariance() const;
   inline Eigen::Matrix3d& Covariance();
+  inline bool HasCovariance() const;
   inline void SetCovariance(const Eigen::Matrix3d& covariance);
 
   inline const class Track& Track() const;
@@ -135,6 +136,8 @@ void Point3D::SetError(const double error) { error_ = error; }
 const Eigen::Matrix3d& Point3D::Covariance() const { return covariance_; }
 
 Eigen::Matrix3d& Point3D::Covariance() { return covariance_; }
+
+bool Point3D::HasCovariance() const { return !covariance_.isZero(1e-10); };
 
 void Point3D::SetCovariance(const Eigen::Matrix3d& covariance) {
   covariance_ = covariance;

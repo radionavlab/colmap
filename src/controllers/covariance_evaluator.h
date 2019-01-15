@@ -32,23 +32,35 @@
 #ifndef COLMAP_SRC_CONTROLLERS_COVARIANCE_EVALUATOR_H_
 #define COLMAP_SRC_CONTROLLERS_COVARIANCE_EVALUATOR_H_
 
-#include "base/reconstruction.h"
+#include "base/reconstruction_manager.h"
+#include "optim/bundle_adjustment.h"
 #include "util/option_manager.h"
 #include "util/threading.h"
 
 namespace colmap {
 
+struct CovarianceEvaluatorOptions {
+  public:
+    // Options to control bundle adjustment
+    BundleAdjustmentOptions ba_options;
+
+    bool Check() const;
+
+  private:
+    friend class OptionManager;
+};
+
 // Class that controls the global bundle adjustment procedure.
 class CovarianceEvaluatorController : public Thread {
  public:
-  CovarianceEvaluatorController(const OptionManager& options,
-                                Reconstruction* reconstruction);
+  CovarianceEvaluatorController(const CovarianceEvaluatorOptions* options,
+                                ReconstructionManager* reconstruction_manager);
 
  private:
   void Run();
 
-  const OptionManager options_;
-  Reconstruction* reconstruction_;
+  const CovarianceEvaluatorOptions* options_;
+  ReconstructionManager* reconstruction_manager_;
 };
 
 }  // namespace colmap
