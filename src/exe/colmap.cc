@@ -420,6 +420,7 @@ int RunCovarianceEvaluator(int argc, char** argv) {
   reconstruction_manager.Get(reconstruction_idx).Load(db_cache);
 
   CovarianceEvaluatorOptions cov_options;
+  cov_options.ba_options = *options.bundle_adjustment;
   CovarianceEvaluatorController cov_controller(&cov_options, &reconstruction_manager);
   cov_controller.Start();
   cov_controller.Wait(); 
@@ -428,7 +429,7 @@ int RunCovarianceEvaluator(int argc, char** argv) {
   reconstruction_manager.Get(0).Write(output_path);
   reconstruction_manager.Get(0).WriteText(output_path);
   
-  std::cout << "Success!" << std::endl;
+  std::cout << "Success!" << std::endl << std::endl;
   return EXIT_SUCCESS;
 }
 
@@ -1457,6 +1458,7 @@ int RunNextBestView(int argc, char** argv) {
   std::string incorporated_image_list_path;
   std::string candidate_image_list_path;
   std::string roi_path;
+  std::string camera_network_log_path;
 
   OptionManager options;
   options.AddDatabaseOptions();
@@ -1465,6 +1467,7 @@ int RunNextBestView(int argc, char** argv) {
   options.AddRequiredOption("output_path", &output_path);
   options.AddRequiredOption("candidate_image_list_path", &candidate_image_list_path);
   options.AddRequiredOption("incorporated_image_list_path", &incorporated_image_list_path);
+  options.AddRequiredOption("camera_network_log_path", &camera_network_log_path);
   options.AddDefaultOption("roi_path", &roi_path);
   options.Parse(argc, argv);
 
@@ -1508,6 +1511,7 @@ int RunNextBestView(int argc, char** argv) {
       std::set<std::string>(incorporated_image_names.begin(), incorporated_image_names.end());
   next_best_view_options.candidate_image_names = 
     std::set<std::string>(candidate_image_names.begin(), candidate_image_names.end());
+  next_best_view_options.camera_network_log_path = camera_network_log_path;
 
   NextBestViewController nbv(&next_best_view_options,
                              *options.image_path,
@@ -1522,7 +1526,7 @@ int RunNextBestView(int argc, char** argv) {
   reconstruction.Write(output_path);
   reconstruction.WriteText(output_path);
  
-  std::cout << "Success!" << std::endl;
+  std::cout << "Success!" << std::endl << std::endl;
 
   return EXIT_SUCCESS;
 }

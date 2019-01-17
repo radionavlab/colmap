@@ -128,6 +128,28 @@ namespace {
     }
   }
 
+  class CameraNetworkLogger {
+    public:
+      CameraNetworkLogger(const std::string& path) {
+        this->file_.open(path);
+      }
+
+      ~CameraNetworkLogger() {
+        this->file_.close();
+      }
+
+      void operator<<(const std::vector<image_t>& network) {
+        for(const image_t image_id: network) {
+          this->file_ << image_id << " ";
+        }
+        this->file_ << '\b' << std::endl;
+      }
+
+    private:
+      std::ofstream file_;
+
+  };
+
 
   // Callback functor called after each bundle adjustment iteration.
   class BundleAdjustmentIterationCallback : public ceres::IterationCallback {
@@ -376,6 +398,93 @@ void NextBestViewController::EvaluateCovariance() {
   return;
 }
 
+bool NextBestViewController::UncertaintyThreshholdMet() {
+  const size_t num_keypoints = this->keypoints_.size();
+  size_t num_well_constrained_keypoints = 0;
+
+  CHECK_GT(num_keypoints, 0) << "No keypoints marked!";
+
+  const auto points3D = this->reconstruction_->Points3D();
+  for(point3D_t point3D_id: this->keypoints_) {
+    // For a symmetric matrix (covariance), the matrix 2-norm 
+    // is equal to the largest eigenvalue
+    if(std::sqrt(points3D.at(point3D_id).Covariance().norm())
+        < options_->keypoint_uncertainty_bound) {
+      ++num_well_constrained_keypoints;
+    }
+  }
+
+  const double ratio = 
+      static_cast<double>(num_well_constrained_keypoints) /
+      static_cast<double>(num_keypoints);
+
+  std::cout << 
+    num_well_constrained_keypoints 
+    << " / " 
+    << num_keypoints 
+    << " ("
+    << 100.0 * ratio
+    <<"%)"
+    << " keypoints are contrained below " 
+    << this->options_->keypoint_uncertainty_bound 
+    << " meters"
+    << std::endl;
+
+  return ratio > this->options_->keypoint_uncertainty_ratio;
+}
+
+void NextBestViewController::MarkKeypoints() {
+  this->keypoints_.clear();
+  for(const auto& point3D_kv: this->reconstruction_->Points3D()) {
+    if(options_->roi.Contains(point3D_kv.second.XYZ())) {
+      this->keypoints_.insert(point3D_kv.first);
+    }
+  }
+}
+
+bool NextBestViewController::LoadDatabase() {
+  PrintHeading1("Loading database");
+
+  Database database(database_path_);
+  Timer timer;
+  timer.Start();
+  const size_t min_num_matches = static_cast<size_t>(options_->min_num_matches);
+  database_cache_.Load(database, min_num_matches, options_->ignore_watermarks, {});
+  std::cout << std::endl;
+  timer.PrintMinutes();
+
+  std::cout << std::endl;
+
+  if (database_cache_.NumImages() == 0) {
+    std::cout << "WARNING: No images with matches found in the database."
+              << std::endl
+              << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+void NextBestViewController::ValidateKeypoints() {
+  auto point_map = reconstruction_->Points3D();
+  std::set<point3D_t> to_remove;
+  for(point3D_t point_id: this->keypoints_) {
+    try {
+      point_map.at(point_id);
+    } catch(const std::out_of_range& e) {
+      // For some reason or another, the reconstruction has determined that this
+      // point is invalid and has removed it from the reconstruction. Remove it
+      // from the keypoint list as it no longer exists.
+      to_remove.insert(point_id);
+    }
+  }
+
+  for(point3D_t point_id: to_remove) {
+    this->keypoints_.erase(point_id);
+  }
+
+}
+
 void NextBestViewController::Reconstruct() {
 
   //////////////////////////////////////////////////////////////////////////////
@@ -452,36 +561,127 @@ void NextBestViewController::Run() {
 
   MarkKeypoints();
 
-  // Build a map between candidate images and 3D keypoints
-  std::map<image_t, CandidateImage> candidate_image_map;
-  const CorrespondenceGraph& cg = this->database_cache_.CorrespondenceGraph();
-  for(point3D_t point3D_id: this->keypoints_) {
-    const Point3D& point3D = this->reconstruction_->Point3D(point3D_id);
-    const Track& track = point3D.Track();
-    for(const TrackElement& te: track.Elements()) {
-      const std::vector<CorrespondenceGraph::Correspondence>& correspondences = 
-        cg.FindCorrespondences(te.image_id, te.point2D_idx);
-      for(const auto& correspondence: correspondences) {
+  std::vector<image_t> camera_network;
+  CameraNetworkLogger camera_network_logger(this->options_->camera_network_log_path);
 
-        // Get a reference to the candidate image. If none exists, create one
-        image_t image_id = correspondence.image_id;
-        try {
-          candidate_image_map.at(image_id);
-        } catch(const std::out_of_range& e) {
-          candidate_image_map[image_id] = CandidateImage(image_id);
-        }
-        
-        // Associate a keypoint with the candidate image 
-        candidate_image_map[image_id].AddKeypoint(point3D_id, point3D, this->reconstruction_->Image(image_id));
-      }
-    }
+  // Consider the incorporated image names as the first network
+  for(const std::string& image_name: this->incorporated_image_names_) {
+    camera_network.push_back(this->reconstruction_->FindImageWithName(image_name)->ImageId());
   }
+
+  // Log camera network
+  camera_network_logger << camera_network;
+
+  // Perform initial reconstruction
+  Reconstruct();
+
+  // Evaluate the covariance
+  EvaluateCovariance();
+
+  // Cleanup
+  ValidateKeypoints();
  
   //////////////////////////////////////////////////////////////////////////////
   // Main Loop
+  // 1) Score all candidate images
+  // 2) Greedily select camera network
+  // 3) Reconstruct
+  // 4) Evaluate covariance
+  // 5) Evaluate terminal conditions
   //////////////////////////////////////////////////////////////////////////////
-  bool terminate = false;
   while(true) {
+
+    // Traverse the correspondence graph and link images and points3D
+    std::map<image_t, CandidateImage> candidate_image_map;
+    const CorrespondenceGraph& cg = this->database_cache_.CorrespondenceGraph();
+    for(point3D_t point3D_id: this->keypoints_) {
+      const Point3D& point3D = this->reconstruction_->Point3D(point3D_id);
+      const Track& track = point3D.Track();
+      for(const TrackElement& te: track.Elements()) {
+        const std::vector<CorrespondenceGraph::Correspondence>& correspondences = 
+          cg.FindCorrespondences(te.image_id, te.point2D_idx);
+        for(const auto& correspondence: correspondences) {
+
+          // Get a reference to the candidate image. If none exists, create one
+          image_t image_id = correspondence.image_id;
+          try {
+            candidate_image_map.at(image_id);
+          } catch(const std::out_of_range& e) {
+            candidate_image_map[image_id] = CandidateImage(image_id);
+          }
+          
+          // Associate a keypoint with the candidate image 
+          candidate_image_map[image_id].AddKeypoint(
+              point3D_id, 
+              point3D, 
+              this->reconstruction_->Image(image_id));
+        }
+      }
+    }
+  
+    // Cretae a list of candidate images for sorting
+    std::vector<CandidateImage> candidate_images;
+    for(const std::string& image_name: this->candidate_image_names_) {
+      const Image* image = this->reconstruction_->FindImageWithName(image_name);
+      CHECK_NOTNULL(image);
+
+      // Only transfer images that are in the candidate image list
+      auto kv = candidate_image_map.find(image->ImageId());
+      if(kv == candidate_image_map.end()) { continue; }
+
+      // Copy the image into a vector.
+      candidate_images.push_back(kv->second);
+
+      // Score the image in the vector.
+      candidate_images.back().CalcScore();
+    }
+
+    // Next best image does not meet minimum required score
+    std::sort(candidate_images.begin(), candidate_images.end(), std::greater<CandidateImage>());
+    if(candidate_images.front().Score() < this->options_->min_candidate_score) {
+      std::cout << "No candidate image meets minimum requirements. Terminating." << std::endl;
+      std::for_each(candidate_images.begin(), candidate_images.end(), 
+          [](const CandidateImage& ci){ std::cout << ci.Score() << std::endl; });
+      std::cout << "Num Keypoints: " << this->keypoints_.size() << std::endl;
+      break;
+    }
+ 
+    // Select camera network
+    PrintHeading1("Selecting Camera Network");
+    camera_network.clear();
+
+    for(size_t idx = 0; idx < options_->camera_network_size; ++idx) {
+      if(candidate_images.empty()) {
+        break;
+      }
+
+      // Sort images
+      std::sort(candidate_images.begin(), candidate_images.end(), std::greater<CandidateImage>());
+
+      // Select best image
+      const CandidateImage selected_image = candidate_images.front();
+      candidate_images.erase(candidate_images.begin());
+
+      const Image& image = this->reconstruction_->Image(selected_image.ImageId());
+      const std::string& image_name = image.Name();
+
+      std::cout << "Adding " << image_name << " with score " 
+        << selected_image.Score() << " to camera network." << std::endl;
+
+      camera_network.push_back(selected_image.ImageId());
+      incorporated_image_names_.insert(image_name);
+      candidate_image_names_.erase(image_name);
+
+      // Adjust the score of other images conditioned on the fact that one has
+      // been selected
+      std::for_each(
+          candidate_images.begin(), 
+          candidate_images.end(), 
+          [selected_image](CandidateImage& ci){ ci.Adjust(selected_image); });
+    }
+
+    camera_network_logger << camera_network;
+
     // Perform reconstruction with incorportaed images 
     Reconstruct();
 
@@ -498,158 +698,14 @@ void NextBestViewController::Run() {
     } 
 
     // Terminal conditions met
-    if(Finished()) {
+    if(UncertaintyThreshholdMet()) {
+      std::cout << "Uncertainty threshhold met. Terminating." << std::endl;
       break;
-    }
-
-    // Terminate requested
-    if(terminate) {
-      break;
-    }
-    
-    PrintHeading1("Selecting Camera Network");
-
-
-    // Retrieve candidate images
-    std::vector<CandidateImage> candidate_images;
-    for(const std::string& image_name: this->candidate_image_names_) {
-      const Image* image = this->reconstruction_->FindImageWithName(image_name);
-      CHECK_NOTNULL(image);
-
-      auto kv = candidate_image_map.find(image->ImageId());
-      if(kv == candidate_image_map.end()) { continue; }
-
-      // Copy the image into a vector.
-      candidate_images.push_back(kv->second);
-
-      // Score the image in the vector.
-      candidate_images.back().CalcScore();
-    }
-
-    // Minimum number of images is greater than number of candidates
-    if(candidate_image_names_.size() <= options_->camera_network_size) {
-        incorporated_image_names_.insert(candidate_image_names_.begin(), candidate_image_names_.end());
-        candidate_image_names_.clear();
-        continue;
-    }
- 
-    // Select the camera network
-    for(size_t idx = 0; idx < options_->camera_network_size; ++idx) {
-      std::sort(candidate_images.begin(), candidate_images.end(), std::greater<CandidateImage>());
-
-      const CandidateImage selected_image = candidate_images.front();
-      candidate_images.erase(candidate_images.begin());
-
-      if(selected_image.Score() < this->options_->min_candidate_score) {
-        if(idx == 0) {
-          terminate = true;
-          break;
-        } else {
-          continue;
-        }
-      }
-
-      const Image& image = this->reconstruction_->Image(selected_image.ImageId());
-      const std::string& image_name = image.Name();
-
-      std::cout << "Adding " << image_name << " with score " 
-        << selected_image.Score() << " to camera network." << std::endl;
-
-      incorporated_image_names_.insert(image_name);
-      candidate_image_names_.erase(image_name);
-
-      std::for_each(
-          candidate_images.begin(), 
-          candidate_images.end(), 
-          [selected_image](CandidateImage &ci){ ci.Adjust(selected_image); });
     }
   } 
 
   GetTimer().PrintMinutes();
   this->reconstruction_->TearDown();
-}
-
-bool NextBestViewController::Finished() {
-  const size_t num_keypoints = this->keypoints_.size();
-  size_t num_well_constrained_keypoints = 0;
-
-  CHECK_GT(num_keypoints, 0) << "No keypoints marked!";
-
-  const auto points3D = this->reconstruction_->Points3D();
-  for(point3D_t point3D_id: this->keypoints_) {
-    // For a symmetric matrix (covariance), the matrix 2-norm 
-    // is equal to the largest eigenvalue
-    if(std::sqrt(points3D.at(point3D_id).Covariance().norm())
-        < options_->keypoint_uncertainty_bound) {
-      ++num_well_constrained_keypoints;
-    }
-  }
-
-  std::cout << 
-    num_well_constrained_keypoints 
-    << " / " 
-    << num_keypoints 
-    << " keypoints are contrained below " 
-    << this->options_->keypoint_uncertainty_bound 
-    << " meters"
-    << std::endl;
-
-  return (
-      static_cast<double>(num_well_constrained_keypoints) /
-      static_cast<double>(num_keypoints)
-    ) > this->options_->keypoint_uncertainty_ratio;
-}
-
-void NextBestViewController::MarkKeypoints() {
-  this->keypoints_.clear();
-  for(const auto& point3D_kv: this->reconstruction_->Points3D()) {
-    if(options_->roi.Contains(point3D_kv.second.XYZ())) {
-      this->keypoints_.insert(point3D_kv.first);
-    }
-  }
-}
-
-bool NextBestViewController::LoadDatabase() {
-  PrintHeading1("Loading database");
-
-  Database database(database_path_);
-  Timer timer;
-  timer.Start();
-  const size_t min_num_matches = static_cast<size_t>(options_->min_num_matches);
-  database_cache_.Load(database, min_num_matches, options_->ignore_watermarks, {});
-  std::cout << std::endl;
-  timer.PrintMinutes();
-
-  std::cout << std::endl;
-
-  if (database_cache_.NumImages() == 0) {
-    std::cout << "WARNING: No images with matches found in the database."
-              << std::endl
-              << std::endl;
-    return false;
-  }
-
-  return true;
-}
-
-void NextBestViewController::ValidateKeypoints() {
-  auto point_map = reconstruction_->Points3D();
-  std::set<point3D_t> to_remove;
-  for(point3D_t point_id: this->keypoints_) {
-    try {
-      point_map.at(point_id);
-    } catch(const std::out_of_range& e) {
-      // For some reason or another, the reconstruction has determined that this
-      // point is invalid and has removed it from the reconstruction. Remove it
-      // from the keypoint list as it no longer exists.
-      to_remove.insert(point_id);
-    }
-  }
-
-  for(point3D_t point_id: to_remove) {
-    this->keypoints_.erase(point_id);
-  }
-
 }
 
 }  // namespace colmap

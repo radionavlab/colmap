@@ -52,6 +52,9 @@ struct NextBestViewOptions {
   // Which images are being considered for incorporation
   std::set<std::string> candidate_image_names;
 
+  // File to log the selected camera networks
+  std::string camera_network_log_path;
+
   // Uncertainty size in meters below which a keypoint is considered
   // 'sufficiently-contrained'
   double keypoint_uncertainty_bound = 0.01;
@@ -59,10 +62,10 @@ struct NextBestViewOptions {
   // Ratio of 'well-constrained' keypoints to toal keypoints above which the
   // reconstruction is considered 'well-contrained'.  Functions as a terminal
   // condition for the NBV solver.
-  double keypoint_uncertainty_ratio = 0.95;
+  double keypoint_uncertainty_ratio = 0.8;
 
   // The minimum score a candidate image can have to be considered a candidate
-  double min_candidate_score = 100.00;
+  double min_candidate_score = 0.00;
 
   // The number of cameras in a camera network selection
   size_t camera_network_size = 10;
@@ -129,7 +132,7 @@ class NextBestViewController : public Thread {
   void MarkKeypoints();
 
   /* Determines if the terminal conditions are met */
-  bool Finished();
+  bool UncertaintyThreshholdMet();
 
   /* Ensures that the keypoint list contains only valid keypoints. Sometimes the
    * reconstruction determines that keypoints are bad and tosses them.
